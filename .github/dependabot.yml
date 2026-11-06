@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: daily
+      time: "00:15"
+      timezone: "Europe/Amsterdam"
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+      - c++
