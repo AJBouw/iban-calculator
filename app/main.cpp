@@ -6,6 +6,6 @@
 int main() {
     std::cout << "IBAN Calculator 0.1.0: toolchain OK\n";
 
-    // TODO: return 0 means the operating system is successful
+    // LEARN: return 0 means the operating system is successful
     return 0;
 }
