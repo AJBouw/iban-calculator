@@ -1,6 +1,6 @@
 # IBAN Calculator
 A multithreaded command-line tool that counts, lists or searches account numbers
-satisfying the **m-test**, a weighted digit-sum check generalised from the
+satisfying the **m-check**, a weighted digit-sum check generalised from the
 *Dutch 11-proef*. Built for the *Concurrent Programming* module in modern C++20.
 
 ## Table of Contents
@@ -18,7 +18,7 @@ satisfying the **m-test**, a weighted digit-sum check generalised from the
 ---
 
 ## Background
-Before IBAN, Dutch bank account numbers were validated with the *11-test*.
+Before IBAN, Dutch bank account numbers were validated with the *11-check*.
 Each digit is multiplied by a weight based on its position (the last digit
 by 1, the second-to-last by 2, and so on). The number is valid when the sum
 is a multiple of 11.
@@ -29,7 +29,7 @@ Example for `23.12.43.138`:
 2·9 + 3·8 + 1·7 + 2·6 + 4·5 + 3·4 + 1·3 + 3·2 + 8·1 = 110 = 10 · 11  ✓
 ```
 
-The **m-test** generalises this: the sum must be a multiple of a given
+The **m-check** generalises this: the sum must be a multiple of a given
 modulus `m` (1–256). Numbers may have any number of digits.
 
 The range of numbers to check can be very large (up to 2³¹−1), so the work
