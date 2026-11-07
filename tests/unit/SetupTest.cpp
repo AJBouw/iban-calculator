@@ -1,5 +1,5 @@
 /// Smoke tests for the build environment.
-/// When these pass on macOS, Linux and Windows (see CI), the compiler,
+/// When these pass on macOS, Linux, and Windows (see CI), the compiler,
 /// C++20 mode and threading work on every platform.
 /// They stay in the suite to catch a broken toolchain early.
 
