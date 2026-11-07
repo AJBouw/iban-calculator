@@ -1,5 +1,8 @@
 BasedOnStyle: Google
 IndentWidth: 4
+UseTab: Never              # spaces only (Google already does this; now explicit)
+LineEnding: LF             # Unix line endings, same as .editorconfig
+InsertNewlineAtEOF: true   # final newline, same as .editorconfig
 ColumnLimit: 100
 AccessModifierOffset: -4
 DerivePointerAlignment: false
