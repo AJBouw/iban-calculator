@@ -1,0 +1,24 @@
+# EditorConfig: shared whitespace and encoding rules for every editor and IDE
+# (CLion, Visual Studio, VS Code, ...). See https://editorconfig.org
+# C++ formatting itself is enforced by .clang-format; these settings agree with it.
+
+# LEARN: root = true tells editors to stop looking for .editorconfig files in parent folders.
+root = true
+
+# Defaults for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# YAML does not allow tabs; 2 spaces is the convention (CI workflows, Dependabot).
+# JSON (CMakePresets.json) uses 2 spaces by convention.
+[*.{yml,yaml,json}]
+indent_size = 2
+
+# In Markdown, two trailing spaces mean a line break, so keep them.
+[*.md]
+trim_trailing_whitespace = false
