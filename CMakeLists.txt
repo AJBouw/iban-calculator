@@ -37,10 +37,23 @@ function(iban_set_warnings target)
 endfunction()
 
 # ---------------------------------------------------------------------------
+# Core library
+# ---------------------------------------------------------------------------
+# All project code except main() lives in one static library, shared by the
+# program and the tests, so the tests exercise exactly the code that ships.
+add_library(iban_core STATIC
+        src/domain/MCheck.cpp
+)
+# PUBLIC: everything that links iban_core can #include "iban/...".
+target_include_directories(iban_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(iban_core PUBLIC Threads::Threads)
+iban_set_warnings(iban_core)
+
+# ---------------------------------------------------------------------------
 # Program
 # ---------------------------------------------------------------------------
 add_executable(iban app/main.cpp)
-target_link_libraries(iban PRIVATE Threads::Threads)
+target_link_libraries(iban PRIVATE iban_core)
 iban_set_warnings(iban)
 
 # ---------------------------------------------------------------------------
@@ -76,8 +89,9 @@ if(IBAN_BUILD_TESTS)
 
     add_executable(iban_unit_tests
             tests/unit/SetupTest.cpp
+            tests/unit/MCheckTest.cpp
     )
-    target_link_libraries(iban_unit_tests PRIVATE GTest::gtest_main Threads::Threads)
+    target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main)
     iban_set_warnings(iban_unit_tests)
 
     # Registers every test case with CTest so CI and the IDE can run and
