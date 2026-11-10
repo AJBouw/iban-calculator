@@ -1,16 +1,20 @@
 /// @file MCheckTest.cpp
 /// @brief Unit tests for the m-check: the examples from the assignment, values
-///        that are easy to verify by hand, and edge cases.
+///        that are easy to verify by hand, edge cases, and proof that the
+///        incremental MCheckWalker always matches the direct calculation.
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "iban/domain/MCheck.h"
 
 // LEARN: `using` makes a name available without its full namespace prefix,
 // LEARN: so you can write weightedDigitSum instead of iban::domain::weightedDigitSum.
+using iban::domain::MCheckWalker;
 using iban::domain::passesMCheck;
 using iban::domain::weightedDigitSum;
 
@@ -82,12 +86,13 @@ TEST(PassesMCheck, ModulusOneAcceptsEverything) {
     }
 }
 
-// Largest modulus from the assignment: the sum must reach a multiple of 256.
+// Largest modulus from the assignment (m = 256).
 TEST(PassesMCheck, LargestModulus) {
-    EXPECT_FALSE(passesMCheck(1, 256));       // sum 1
-    EXPECT_FALSE(passesMCheck(kMaxBound, 256));  // sum 244, smaller than 256
-    // 10399999: 1*8 + 0*7 + 3*6 + 9*(5+4+3+2+1) = 8 + 0 + 18 + 135 = 161 ... see below
-    EXPECT_EQ(passesMCheck(99999999, 256), weightedDigitSum(99999999) % 256 == 0);
+    // 19998999 is the smallest number with weighted sum exactly 256:
+    // 1*8 + 9*7 + 9*6 + 9*5 + 8*4 + 9*3 + 9*2 + 9*1 = 256
+    EXPECT_TRUE(passesMCheck(19998999, 256));
+    EXPECT_FALSE(passesMCheck(1, 256));          // sum 1
+    EXPECT_FALSE(passesMCheck(kMaxBound, 256));  // sum 219, below 256
 }
 
 // x % 0 is undefined behaviour, so a non-positive modulus must be rejected.
@@ -101,3 +106,64 @@ TEST(PassesMCheck, ZeroCountsAsValid) {
     EXPECT_TRUE(passesMCheck(0, 11));
     EXPECT_TRUE(passesMCheck(0, 256));
 }
+
+// ---------------------------------------------------------------------------
+// MCheckWalker
+// ---------------------------------------------------------------------------
+
+TEST(MCheckWalker, RejectsInvalidArguments) {
+    EXPECT_THROW(MCheckWalker(0, 0), std::invalid_argument);
+    EXPECT_THROW(MCheckWalker(0, -3), std::invalid_argument);
+    EXPECT_THROW(MCheckWalker(-1, 11), std::invalid_argument);
+}
+
+TEST(MCheckWalker, StartsAtGivenNumber) {
+    const MCheckWalker walker(274856182, 11);
+    EXPECT_EQ(walker.value(), 274856182);
+    EXPECT_EQ(walker.digitSum(), weightedDigitSum(274856182));
+    EXPECT_TRUE(walker.isValid());
+}
+
+// Walking the assignment example range finds exactly the two valid numbers.
+TEST(MCheckWalker, FindsAssignmentExampleNumbers) {
+    std::vector<std::int64_t> found;
+    for (MCheckWalker walker(274856170, 11); walker.value() < 274856190; walker.advance()) {
+        if (walker.isValid()) {
+            found.push_back(walker.value());
+        }
+    }
+    EXPECT_EQ(found, (std::vector<std::int64_t>{274856174, 274856182}));
+}
+
+// The incremental sum must always equal the direct calculation, in particular
+// around carries (9 -> 10, 99 -> 100, ...). This is what guarantees that the
+// optimisation does not change the result. Each parameter is a range
+// [begin, end) to walk through.
+// LEARN: TestWithParam makes a parameterised test: the same test runs once for
+// LEARN: every value in INSTANTIATE_TEST_SUITE_P below; GetParam() returns that value.
+class MCheckWalkerMatchesDirectCalculation
+    : public ::testing::TestWithParam<std::pair<std::int64_t, std::int64_t>> {};
+
+TEST_P(MCheckWalkerMatchesDirectCalculation, ForEveryNumberInRange) {
+    // LEARN: a structured binding unpacks the pair into two named variables.
+    const auto [begin, end] = GetParam();
+    for (const int modulus : {1, 7, 11, 12, 256}) {
+        MCheckWalker walker(begin, modulus);
+        for (std::int64_t x = begin; x < end; ++x, walker.advance()) {
+            // LEARN: ASSERT_ stops this test at the first failure (EXPECT_ continues);
+            // LEARN: that avoids thousands of follow-up messages inside a loop.
+            ASSERT_EQ(walker.value(), x);
+            ASSERT_EQ(walker.digitSum(), weightedDigitSum(x)) << "x = " << x;
+            ASSERT_EQ(walker.isValid(), passesMCheck(x, modulus)) << "x = " << x;
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Carries, MCheckWalkerMatchesDirectCalculation,
+    ::testing::Values(std::pair<std::int64_t, std::int64_t>{0, 2000},
+                      std::pair<std::int64_t, std::int64_t>{9990, 10020},
+                      std::pair<std::int64_t, std::int64_t>{999990, 1000020},
+                      std::pair<std::int64_t, std::int64_t>{274856170, 274856190},
+                      std::pair<std::int64_t, std::int64_t>{999999990, 1000000020},
+                      std::pair<std::int64_t, std::int64_t>{kMaxBound - 2000, kMaxBound + 1}));
