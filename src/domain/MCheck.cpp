@@ -23,6 +23,9 @@ namespace {
 // LEARN: the type-safe replacement for #define (typed, scoped, visible in the debugger).
 constexpr int kDecimalBase = 10;
 
+// Highest digit (9): a number ending in this digit carries on the next step.
+constexpr int kHighestDigit = kDecimalBase - 1;
+
 }  // namespace
 
 int weightedDigitSum(std::int64_t number) {
@@ -52,6 +55,27 @@ bool passesMCheck(std::int64_t number, int modulus) {
         throw std::invalid_argument("passesMCheck: modulus must be > 0");
     }
     return weightedDigitSum(number) % modulus == 0;
+}
+
+// The modulus is validated before the digit sum is computed, so an invalid
+// modulus is reported even when `start` is valid.
+// LEARN: after the ':' comes the member initializer list: the fields get their
+// LEARN: value before the constructor body runs.
+MCheckWalker::MCheckWalker(std::int64_t start, int modulus)
+    : current_(start), modulus_(modulus), sum_(0) {
+    if (modulus <= 0) {
+        throw std::invalid_argument("MCheckWalker: modulus must be > 0");
+    }
+    sum_ = weightedDigitSum(start);  // throws for start < 0
+}
+
+void MCheckWalker::advance() {
+    const bool carries = current_ % kDecimalBase == kHighestDigit;
+    ++current_;
+    // Without a carry only the last digit (weight 1) went up by one, so the
+    // sum goes up by one. With a carry several digits change: recompute.
+    // LEARN: `a ? b : c` is the ternary operator: if a then b, otherwise c.
+    sum_ = carries ? weightedDigitSum(current_) : sum_ + 1;
 }
 
 }  // namespace iban::domain
