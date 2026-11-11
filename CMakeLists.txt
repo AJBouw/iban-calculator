@@ -143,8 +143,10 @@ if(IBAN_BUILD_TESTS)
     # LEARN: gtest_main provides a main() that runs every TEST(...) in the files.
     add_executable(iban_unit_tests
             tests/unit/SetupTest.cpp
+            tests/unit/MCheckTest.cpp
     )
-    target_link_libraries(iban_unit_tests PRIVATE GTest::gtest_main Threads::Threads)
+    # Links the same iban_core as the program, so the tests check the shipped code.
+    target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
     iban_set_warnings(iban_unit_tests)
 
     # Register individual GoogleTest cases with CTest.
