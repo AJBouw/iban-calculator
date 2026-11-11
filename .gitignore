@@ -1,0 +1,11 @@
+Testing/
+compile_commands.json
+cmake_install.cmake
+CMakeCache.txt
+CMakeFiles/
+.DS_Store
+.vscode/
+.idea/
+cmake-build-*/
+build/
+s
