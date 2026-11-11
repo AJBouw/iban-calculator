@@ -6,7 +6,7 @@ A multithreaded command-line application written in modern C++20. It generalises
 
 The application is designed to count, list or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
 
-> **Project status:** The initial project setup is complete. The CMake build configuration, C++20 toolchain checks, initial GoogleTest smoke tests, code formatting checks and continuous integration are in place. The application functionality is under development.
+> **Project status:** The project setup is complete, and the m-check itself is implemented and tested as a reference implementation in the core library. Input parsing, the operating modes and multithreading are under development.
 
 ## Table of Contents
 
@@ -41,6 +41,8 @@ For example, the number `23.12.43.138`:
 ```
 
 The **m-check** generalises this principle: instead of always checking divisibility by 11, the application accepts a configurable modulus `m` (1–256).
+
+With `m = 11` the check detects every single-digit error and every swap of two adjacent digits: such an error changes the sum by `weight × difference` or by `difference`, and with weights and differences below 11 and 11 being prime, that change is never a multiple of 11. The unit tests verify this property.
 
 Numbers may contain any number of decimal digits, subject to the input range supported by the assignment.
 
@@ -204,14 +206,22 @@ iban-calculator/
 ├── cmake/
 │   └── Version.h.in
 ├── app/
-│   └── main.cpp
+│   └── main.cpp            # Entry point only
+├── include/
+│   └── iban/
+│       └── domain/
+│           └── MCheck.h    # Public interface of the m-check
+├── src/
+│   └── domain/
+│       └── MCheck.cpp      # Reference implementation of the m-check
 ├── tests/
 │   └── unit/
-│       └── SetupTest.cpp
+│       ├── SetupTest.cpp
+│       └── MCheckTest.cpp
 └── build/                  # Generated; not committed
 ```
 
-Public headers will be added under `include/iban/` and implementation files under `src/`, one folder per layer. Generated files and build artefacts are kept outside the source directories.
+Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`). Generated files and build artefacts are kept outside the source directories.
 
 ## Architecture and Design
 
@@ -223,6 +233,17 @@ The intended design separates the application into responsibilities:
 - **Presentation:** input parsing, parameter validation and console output.
 
 The design aims to keep domain logic independent of threading and console input/output. This makes the algorithms easier to test in isolation and allows different concurrency strategies to be evaluated without changing the underlying validation rules.
+
+All logic except `main()` lives in the static library `iban_core`. Both the program and the unit tests link it, so the tests exercise exactly the code that ships. Only `include/` is exposed to other targets.
+
+### m-check
+
+`weightedDigitSum` computes the sum arithmetically (`% 10` and `/ 10`), without converting the number to text: no memory allocation and O(d) steps for a number with d digits. `passesMCheck` adds the divisibility check.
+
+- **Invalid arguments throw** `std::invalid_argument`: a modulus below 1 or a negative number can only come from a programming error, and returning `false` would silently produce a wrong result. `x % 0` is undefined behaviour in C++, so a modulus of 0 must never reach the division.
+- **`std::int64_t`** is used for numbers, leaving headroom for calculations with the bounds and intermediate results.
+- **Thread-safe** by design: both functions use only their arguments and local variables, so concurrent calls share no mutable state.
+- This implementation is deliberately simple. Faster variants are verified against it.
 
 The version number is defined once, in `project()` in `CMakeLists.txt`; CMake generates a header from `cmake/Version.h.in`, so the code never repeats it.
 
@@ -243,6 +264,14 @@ Run tests with a specific label:
 ```bash
 ctest --preset debug -L unit
 ```
+
+### Current unit tests
+
+| Suite | Verifies |
+|---|---|
+| `Setup` | The compiler uses C++20 and threads can be started. |
+| `WeightedDigitSumTest` | Hand-calculated sums, including 0, 2³¹ − 1 and the largest 10-digit sum. |
+| `PassesMCheck` | The assignment example, error detection with `m = 11`, and rejection of invalid arguments. |
 
 ### Planned test levels
 
@@ -290,7 +319,7 @@ Every push and pull request to `main` or `develop` runs `.github/workflows/conti
 | `build-and-test (windows-latest)` | Build and test with MSVC |
 | `format-check` | Verify formatting against `.clang-format` |
 
-All four checks are required before a pull request can be merged. Dependabot keeps the GitHub Actions versions up to date.
+A pull request is merged only when all four checks pass. Dependabot keeps the GitHub Actions versions up to date.
 
 ### Commits
 
@@ -343,14 +372,14 @@ Each step adds one concern, measured against the previous step where relevant, s
 | Step | Component | Status |
 |---:|---|:---:|
 | 0 | Project setup: CMake presets, version header, smoke tests, formatting, CI | ✅ |
-| 1 | m-check: reference implementation, then incremental walker | ⬜ |
+| 1 | m-check: reference implementation in the core library | ✅ |
 | 2 | Input parsing and validation | ⬜ |
 | 3 | Fair range splitting | ⬜ |
 | 4 | Sequential baseline compared with `p` threads | ⬜ |
 | 5 | Shared counter: data race, mutex, local counting | ⬜ |
 | 6 | List mode | ⬜ |
 | 7 | Search mode with atomic stop flag and early termination | ⬜ |
-| 8 | Performance comparison | ⬜ |
+| 8 | Performance comparison, including an incremental m-check walker | ⬜ |
 | 9 | Thread pool | ⬜ |
 | 10 | Quality checks (sanitizers, static analysis, Doxygen) and release 1.0.0 | ⬜ |
 
@@ -362,7 +391,7 @@ The following points still need to be clarified against the original assignment 
 
 2. **Search parameter `s`:** The exact meaning of `s` in search mode needs clarification. It is not yet established whether it identifies a specific number to validate or defines a starting point for searching.
 
-3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, the mathematical definition considers zero valid. This interpretation will be checked against the assignment requirements.
+3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, `passesMCheck(0, m)` returns `true`. Whether zero should be counted as a valid account number will be checked against the assignment requirements.
 
 4. **Thread pool and synchronisation:** The exact implementation strategy will be determined during development and evaluated against correctness, performance and the concurrency assessment criteria.
 
