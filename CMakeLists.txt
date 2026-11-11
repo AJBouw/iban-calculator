@@ -38,13 +38,27 @@ endfunction()
 configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Version.h @ONLY)
 
 # ---------------------------------------------------------------------------
+# Core library
+# ---------------------------------------------------------------------------
+# All logic except main() lives in one library, linked by both the program and
+# the tests, so the tests exercise exactly the code that ships.
+# LEARN: STATIC: the code is copied into each program that links it (a .a file).
+add_library(iban_core STATIC
+        src/domain/MCheck.cpp
+)
+# Only include/ is public: code that links iban_core can include these headers.
+# LEARN: PUBLIC: iban_core itself AND everything that links it get this path.
+target_include_directories(iban_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+iban_set_warnings(iban_core)
+
+# ---------------------------------------------------------------------------
 # Console application
 # ---------------------------------------------------------------------------
 # LEARN: add_executable(name sources...) builds a program from these files.
 add_executable(iban app/main.cpp)
 # Generated headers live in the build folder, not in the source tree.
 target_include_directories(iban PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-target_link_libraries(iban PRIVATE Threads::Threads)
+target_link_libraries(iban PRIVATE iban_core Threads::Threads)
 iban_set_warnings(iban)
 
 # ---------------------------------------------------------------------------
@@ -91,7 +105,6 @@ if(CLANG_FORMAT_EXECUTABLE)
     endif()
 endif()
 
-
 # ---------------------------------------------------------------------------
 # Unit tests
 # ---------------------------------------------------------------------------
@@ -130,8 +143,10 @@ if(IBAN_BUILD_TESTS)
     # LEARN: gtest_main provides a main() that runs every TEST(...) in the files.
     add_executable(iban_unit_tests
             tests/unit/SetupTest.cpp
+            tests/unit/MCheckTest.cpp
     )
-    target_link_libraries(iban_unit_tests PRIVATE GTest::gtest_main Threads::Threads)
+    # Links the same iban_core as the program, so the tests check the shipped code.
+    target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
     iban_set_warnings(iban_unit_tests)
 
     # Register individual GoogleTest cases with CTest.
