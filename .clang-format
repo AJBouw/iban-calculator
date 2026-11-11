@@ -1,0 +1,28 @@
+# Code style for the whole project (rubric: consistent code style).
+# Enforced by the CMake targets `format` and `format-check`, so the result does
+# not depend on IDE settings. Pinned clang-format version: see CMakeLists.txt.
+BasedOnStyle: Google
+
+# General formatting.
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 100
+LineEnding: LF
+InsertNewlineAtEOF: true
+
+# Braces and control structures.
+# Attach: opening brace on the same line (the Google default, stated explicitly).
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Access modifiers and pointers.
+AccessModifierOffset: -4
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# Include organization.
+IncludeBlocks: Regroup

@@ -1,0 +1,24 @@
+
+# Shared whitespace and encoding rules for every editor and IDE.
+# C++ formatting is handled by .clang-format.
+
+# LEARN: root = true prevents editors from inheriting settings
+# from .editorconfig files in parent directories.
+root = true
+
+# Defaults for all files.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# YAML and JSON use two spaces by convention.
+[*.{yml,yaml,json}]
+indent_size = 2
+
+# Markdown uses two trailing spaces for explicit line breaks.
+[*.md]
+trim_trailing_whitespace = false
