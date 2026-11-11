@@ -48,6 +48,51 @@ target_link_libraries(iban PRIVATE Threads::Threads)
 iban_set_warnings(iban)
 
 # ---------------------------------------------------------------------------
+# Code formatting
+# ---------------------------------------------------------------------------
+# `format` rewrites all sources, `format-check` only reports deviations (CI).
+# Each clang-format release formats slightly differently, so one version is
+# pinned for developers and CI; a different version makes format-check fail
+# with a clear message instead of reporting false deviations.
+set(IBAN_CLANG_FORMAT_VERSION "21.1.8")
+find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format)
+
+if(CLANG_FORMAT_EXECUTABLE)
+    execute_process(COMMAND ${CLANG_FORMAT_EXECUTABLE} --version
+            OUTPUT_VARIABLE clang_format_output OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" clang_format_found "${clang_format_output}")
+
+    # A glob is acceptable here: it only feeds a tool, not the build itself.
+    # CONFIGURE_DEPENDS re-runs the glob when files are added or removed.
+    file(GLOB_RECURSE IBAN_FORMAT_FILES CONFIGURE_DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/app/*.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h)
+
+    add_custom_target(format
+            COMMAND ${CLANG_FORMAT_EXECUTABLE} -i ${IBAN_FORMAT_FILES}
+            COMMENT "Formatting sources with clang-format ${clang_format_found}"
+            VERBATIM)
+
+    if(clang_format_found VERSION_EQUAL IBAN_CLANG_FORMAT_VERSION)
+        add_custom_target(format-check
+                COMMAND ${CLANG_FORMAT_EXECUTABLE} --dry-run --Werror ${IBAN_FORMAT_FILES}
+                COMMENT "Checking formatting with clang-format ${clang_format_found}"
+                VERBATIM)
+    else()
+        add_custom_target(format-check
+                COMMAND ${CMAKE_COMMAND} -E echo
+                "format-check needs clang-format ${IBAN_CLANG_FORMAT_VERSION}, found ${clang_format_found}."
+                "Install it with: pipx install clang-format==${IBAN_CLANG_FORMAT_VERSION}"
+                COMMAND ${CMAKE_COMMAND} -E false
+                VERBATIM)
+    endif()
+endif()
+
+
+# ---------------------------------------------------------------------------
 # Unit tests
 # ---------------------------------------------------------------------------
 if(IBAN_BUILD_TESTS)
