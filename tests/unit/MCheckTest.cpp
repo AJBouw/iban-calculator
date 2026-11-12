@@ -45,7 +45,7 @@ struct SumCase {
     int expectedSum;
 };
 
-// Readable test names in CTest and in failure messages, instead of raw bytes.
+// Provides a readable representation of SumCase in GoogleTest failure messages.
 // LEARN: GoogleTest looks for a function named PrintTo to print custom types.
 void PrintTo(const SumCase& testCase, std::ostream* out) {
     *out << testCase.number << " has sum " << testCase.expectedSum;
@@ -143,7 +143,7 @@ TEST(PassesMCheck, ElevenCheckDetectsEveryAdjacentSwap) {
 
 TEST(PassesMCheck, RejectsModulusBelowOne) {
     // x % 0 is undefined behaviour, so 0 must never reach the division.
-    // LEARN: EXPECT_THROW passes only if the call throws exactly this type.
+    // LEARN: EXPECT_THROW passes when the expression throws the specified exception type.
     EXPECT_THROW((void)passesMCheck(kAssignmentNumber, 0), std::invalid_argument);
     EXPECT_THROW((void)passesMCheck(kAssignmentNumber, -11), std::invalid_argument);
 }
