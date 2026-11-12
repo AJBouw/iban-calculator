@@ -14,6 +14,7 @@
 #include "iban/application/Mode.h"
 
 namespace iban::application {
+
 /// A validated request. Field names are written out; the comments give the
 /// letter from the assignment.
 // LEARN: A struct with public fields: it only carries data and has no rules of
