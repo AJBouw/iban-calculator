@@ -143,9 +143,12 @@ if(IBAN_BUILD_TESTS)
     endforeach()
 
     # LEARN: gtest_main provides a main() that runs every TEST(...) in the files.
-    add_executable(iban_unit_tests
+    add_executable(
+            iban_unit_tests
             tests/unit/SetupTest.cpp
             tests/unit/MCheckTest.cpp
+            tests/unit/InputParserTest.cpp
+            tests/unit/InputParserTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
