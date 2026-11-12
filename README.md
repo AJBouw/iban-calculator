@@ -6,7 +6,7 @@ A multithreaded command-line application written in modern C++20. It generalises
 
 The application is designed to count, list or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
 
-> **Project status:** The project setup is complete, and the m-check itself is implemented and tested as a reference implementation in the core library. Input parsing, the operating modes and multithreading are under development.
+> **Project status:** The project setup, the m-check and the input handling are complete and tested. The program asks for the input, validates it and reports what it will run. The operating modes and multithreading are under development.
 
 ## Table of Contents
 
@@ -56,11 +56,11 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Find a valid number in the range and stop further work as soon as possible. |
+| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check, otherwise print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
 
 ### Input parameters
 
-The assignment describes the following parameters:
+The program asks for input on the console and reads one line. The assignment describes the following parameters:
 
 | Parameter | Description | Constraints |
 |---|---|---|
@@ -69,7 +69,7 @@ The assignment describes the following parameters:
 | `m` | Modulus | `1 ≤ m ≤ 256` |
 | `p` | Number of threads | `1 ≤ p ≤ 256` |
 | `u` | Operating mode | `0`, `1` or `2` |
-| `s` | Additional search parameter | Meaning to be confirmed |
+| `s` | Search parameter | Optional; required in search mode (`u = 2`) |
 
 ### Assignment requirements
 
@@ -181,9 +181,53 @@ On Windows, run the commands from a Developer PowerShell for Visual Studio 2022 
 
 ## Usage
 
-The application currently has no completed user-facing input interface. The command-line input format and examples will be documented here once the input parser and operating modes have been implemented and verified.
+Start the program. It asks for each value in turn and explains what it means and which values are allowed:
 
-The expected interface is based on the assignment parameters described above.
+```text
+IBAN Calculator 0.1.0
+Enter each value and press Enter, or paste all values on one line.
+The assignment examples start with an extra 0: use it only on one line.
+  b  lower bound, inclusive    (0 to 2147483647): 274856170
+  e  upper bound, exclusive    (greater than b, at most 2147483647): 274856190
+  m  modulus of the m-check    (1 to 256): 11
+  p  number of threads         (1 to 256): 4
+  u  mode                      (0 = count, 1 = list, 2 = search): 0
+  s  number to search for      (required when u = 2, press Enter to skip):
+input OK: count mode, range [274856170, 274856190), m = 11, p = 4
+```
+
+An empty answer for a required value repeats the question; an empty answer for `s` skips it.
+
+### All values on one line
+
+When the first answer contains more than one value, it is taken as the complete input. This keeps the examples from the assignment usable, and allows the input to be piped:
+
+```bash
+echo "0 274856170 274856190 11 4 0 0" | ./build/release/iban
+./build/release/iban < input.txt
+```
+
+Three forms are accepted on one line, so that both the written specification and the examples of the assignment work:
+
+| Form | Fields | Source |
+|---|---|---|
+| 6 numbers | `b e m p u s` | The written specification. |
+| 5 numbers | `b e m p u` | The same specification: `s` is optional and only needed in search mode. |
+| 7 numbers | `0 b e m p u s` | The examples in the assignment start with an extra `0`. It is treated as an optional leading zero: it must be `0` and is not used (see assumption 1). |
+
+Examples from the assignment:
+
+```text
+0 274856170 274856190 11 4 0 0     # count mode, expected output: 2
+0 274856170 274856190 11 4 1 0     # list mode
+0 374856170 374856250 12 4 1 0     # list mode with m = 12
+```
+
+### Output and errors
+
+- **Standard output** contains only results. The questions and error messages are written to **standard error**, so the results can be compared or redirected (`iban > out.txt`) without the prompt.
+- Invalid input is reported with the program name and the first invalid field, for example `iban: error: m must be between 1 and 256`, and the program exits with status code 1.
+- Until the operating modes are implemented, the program prints `input OK:` followed by the validated values. This confirms that the input is valid; it does not yet report which account numbers pass the m-check.
 
 ## Project Structure
 
@@ -209,19 +253,31 @@ iban-calculator/
 │   └── main.cpp            # Entry point only
 ├── include/
 │   └── iban/
-│       └── domain/
-│           └── MCheck.h    # Public interface of the m-check
+│       ├── application/
+│       │   ├── Limits.h        # Input rules from the assignment (b, e, m, p)
+│       │   ├── Mode.h          # Operating mode u
+│       │   └── Query.h         # A validated request
+│       ├── domain/
+│       │   └── MCheck.h        # Public interface of the m-check
+│       └── presentation/
+│           ├── ConsoleInput.h  # Asks for the input values
+│           └── InputParser.h   # Turns text into a validated Query
 ├── src/
-│   └── domain/
-│       └── MCheck.cpp      # Reference implementation of the m-check
+│   ├── domain/
+│   │   └── MCheck.cpp          # Reference implementation of the m-check
+│   └── presentation/
+│       ├── ConsoleInput.cpp
+│       └── InputParser.cpp
 ├── tests/
 │   └── unit/
 │       ├── SetupTest.cpp
-│       └── MCheckTest.cpp
+│       ├── MCheckTest.cpp
+│       ├── InputParserTest.cpp
+│       └── ConsoleInputTest.cpp
 └── build/                  # Generated; not committed
 ```
 
-Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`). Generated files and build artefacts are kept outside the source directories.
+Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artefacts are kept outside the source directories.
 
 ## Architecture and Design
 
@@ -244,6 +300,20 @@ All logic except `main()` lives in the static library `iban_core`. Both the prog
 - **`std::int64_t`** is used for numbers, leaving headroom for calculations with the bounds and intermediate results.
 - **Thread-safe** by design: both functions use only their arguments and local variables, so concurrent calls share no mutable state.
 - This implementation is deliberately simple. Faster variants are verified against it.
+
+### Input handling
+
+Input passes through two layers before any calculation starts:
+
+1. **`ConsoleInput`** (presentation) asks for the values and joins them into one line. It does not validate.
+2. **`InputParser`** (presentation) converts the line into a `Query` in two phases: text to numbers with `std::from_chars`, which detects trailing characters such as `12abc` and overflow, then numbers to a `Query`, checked in input order so that the message names the first invalid field.
+
+Design choices:
+
+- **Invalid input is returned, not thrown.** A typing error by the user is expected behaviour, unlike an invalid argument inside the program (see the m-check). The parser returns a `ParseResult` with either a valid `Query` or a message; `std::expected` would express this directly but requires C++23.
+- **One source for every input rule.** `application/Limits.h` holds all bounds from the assignment. The parser, the help text, the error messages, the `Query` defaults and the tests are built from these constants, so they cannot disagree.
+- **A `Query` is always valid.** Only the parser creates one, so the rest of the program does not repeat the checks. `s` is a `std::optional`, because any number, including `-1` or `0`, could be real input.
+- **`Mode` is an `enum class`**, so a mode cannot be mixed up with an integer and the compiler warns when a `switch` misses a mode.
 
 The version number is defined once, in `project()` in `CMakeLists.txt`; CMake generates a header from `cmake/Version.h.in`, so the code never repeats it.
 
@@ -272,6 +342,8 @@ ctest --preset debug -L unit
 | `Setup` | The compiler uses C++20 and threads can be started. |
 | `WeightedDigitSumTest` | Hand-calculated sums, including 0, 2³¹ − 1 and the largest 10-digit sum. |
 | `PassesMCheck` | The assignment example, error detection with `m = 11`, and rejection of invalid arguments. |
+| `InputParser` | The assignment examples, the three input forms, the boundary values and one test per validation rule. |
+| `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions and end of input. |
 
 ### Planned test levels
 
@@ -373,7 +445,7 @@ Each step adds one concern, measured against the previous step where relevant, s
 |---:|---|:---:|
 | 0 | Project setup: CMake presets, version header, smoke tests, formatting, CI | ✅ |
 | 1 | m-check: reference implementation in the core library | ✅ |
-| 2 | Input parsing and validation | ⬜ |
+| 2 | Input: asking per field, parsing and validation | ✅ |
 | 3 | Fair range splitting | ⬜ |
 | 4 | Sequential baseline compared with `p` threads | ⬜ |
 | 5 | Shared counter: data race, mutex, local counting | ⬜ |
@@ -387,9 +459,14 @@ Each step adds one concern, measured against the previous step where relevant, s
 
 The following points still need to be clarified against the original assignment or with the lecturer:
 
-1. **Input format:** The assignment examples contain seven values, while the written description specifies five required parameters and one optional parameter. The additional leading value is provisionally interpreted as a lock-type selector, but this has not yet been confirmed.
+1. **Input format (assumption):** The assignment examples contain seven values, while the written description specifies five required parameters and one optional parameter. Every example starts with an extra `0`. This is treated as an optional leading zero: the program accepts it, requires it to be exactly `0`, and does not use it. Any other first value in a 7-number line is rejected, so a mistyped line is reported instead of silently misread. To be confirmed with the lecturer.
 
-2. **Search parameter `s`:** The exact meaning of `s` in search mode needs clarification. It is not yet established whether it identifies a specific number to validate or defines a starting point for searching.
+2. **Search parameter `s`:** The assignment text says the program must find "a valid account number", and print `-1` when "the account number" is not found. Three interpretations are possible:
+   - **A (current choice):** `s` is the number to search for; the threads search the range, and the thread that finds `s` stops the others. Weakness: the answer could also be computed directly, without searching.
+   - **B:** `s` is not used; the program searches for any valid number in the range.
+   - **C:** `s` is a starting point for the search.
+
+   In every interpretation one thread must stop the others promptly, which is the concurrency requirement this mode tests.
 
 3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, `passesMCheck(0, m)` returns `true`. Whether zero should be counted as a valid account number will be checked against the assignment requirements.
 
