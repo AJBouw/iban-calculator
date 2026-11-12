@@ -43,8 +43,10 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 # All logic except main() lives in one library, linked by both the program and
 # the tests, so the tests exercise exactly the code that ships.
 # LEARN: STATIC: the code is copied into each program that links it (a .a file).
-add_library(iban_core STATIC
+add_library(
+        iban_core STATIC
         src/domain/MCheck.cpp
+        src/presentation/InputParser.cpp
 )
 # Only include/ is public: code that links iban_core can include these headers.
 # LEARN: PUBLIC: iban_core itself AND everything that links it get this path.
