@@ -16,6 +16,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)        # standard C++ only, no compiler extensions
 # Build unit tests by default. Can be disabled with -DIBAN_BUILD_TESTS=OFF.
 option(IBAN_BUILD_TESTS "Build the test suites" ON)
 
+# Off by default: CI and normal builds do not need Google Benchmark. Enable it
+# for measurements with: cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
+option(IBAN_BUILD_BENCHMARKS "Build the benchmark program" OFF)
+
 # Portable thread library (adds -pthread where the platform needs it).
 find_package(Threads REQUIRED)
 
@@ -46,8 +50,7 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 # All logic except main() lives in one library, linked by both the program and
 # the tests, so the tests exercise exactly the code that ships.
 # LEARN: STATIC: the code is copied into each program that links it (a .a file).
-add_library(
-        iban_core STATIC
+add_library(iban_core STATIC
         src/application/ParallelCount.cpp
         src/domain/Count.cpp
         src/domain/MCheck.cpp
@@ -92,6 +95,7 @@ if(CLANG_FORMAT_EXECUTABLE)
     # CONFIGURE_DEPENDS re-runs the glob when files are added or removed.
     file(GLOB_RECURSE IBAN_FORMAT_FILES CONFIGURE_DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/app/*.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
             ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp
@@ -168,4 +172,31 @@ if(IBAN_BUILD_TESTS)
 
     # Register individual GoogleTest cases with CTest.
     gtest_discover_tests(iban_unit_tests PROPERTIES LABELS unit)
+endif()
+
+# ---------------------------------------------------------------------------
+# Benchmark
+# ---------------------------------------------------------------------------
+# Measures the count mode with 1 to 12, 16 and 32 threads. A separate program,
+# not a test: it takes seconds and its output is a time, not pass or fail.
+if(IBAN_BUILD_BENCHMARKS)
+    include(FetchContent)
+    # Pinned version, fetched like GoogleTest. SYSTEM: its headers do not
+    # trigger our strict warnings.
+    FetchContent_Declare(googlebenchmark
+            GIT_REPOSITORY https://github.com/google/benchmark.git
+            GIT_TAG v1.10.0
+            GIT_SHALLOW TRUE
+            SYSTEM)
+    # Only the library is needed: no tests, no install rules, and no -Werror
+    # on its own sources.
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+
+    add_executable(iban_benchmark benchmark/CountBenchmark.cpp)
+    # benchmark::benchmark_main is not used: the file defines BENCHMARK_MAIN.
+    target_link_libraries(iban_benchmark PRIVATE iban_core benchmark::benchmark)
+    iban_set_warnings(iban_benchmark)
 endif()
