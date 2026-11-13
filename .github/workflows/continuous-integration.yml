@@ -71,7 +71,7 @@ jobs:
 
       - name: Check formatting
         run: cmake --build --preset debug --target format-check
-        
+
     # Builds the benchmark and runs every thread count once, so a change that
   # breaks it is noticed. Timings on shared CI runners vary too much to draw
   # conclusions; measurements are taken locally (docs/measurements.md).
@@ -109,3 +109,35 @@ jobs:
         with:
           name: benchmark-ubuntu
           path: benchmark.json
+
+  # Runs the Cucumber scenarios against a Release build of the program and keeps
+  # the HTML report. Linux only: the scenarios test behaviour, which the
+  # build-and-test jobs already check on all three platforms.
+  e2e-tests:
+    name: end-to-end tests (Cucumber)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+      # Java 25 for the step definitions; the Maven cache avoids downloading
+      # Cucumber and JUnit on every run.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: tests/e2e/pom.xml
+      - name: Configure
+        run: cmake --preset release -DIBAN_BUILD_TESTS=OFF -DIBAN_BUILD_E2E_TESTS=ON
+      - name: Build the program
+        run: cmake --build --preset release --target iban
+      - name: Run the scenarios
+        run: ctest --preset release -L e2e
+      # Also kept when a scenario fails, so the report shows which one.
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cucumber-report
+          path: tests/e2e/target/cucumber-report.html
