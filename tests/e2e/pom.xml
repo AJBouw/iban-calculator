@@ -33,7 +33,7 @@
             <dependency>
                 <groupId>io.cucumber</groupId>
                 <artifactId>cucumber-bom</artifactId>
-                <version>7.20.1</version>
+                <version>8.0.4</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -69,6 +69,13 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- JSON library for the HTML report; Cucumber 8 no longer includes one. -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>3.2.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
