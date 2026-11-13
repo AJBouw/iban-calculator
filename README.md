@@ -4,9 +4,9 @@
 
 A multithreaded command-line application written in modern C++20. It generalises the Dutch 11-check (11-proef) into an *m-check* and is developed for the Concurrent Programming module.
 
-The application is designed to count, list, or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
+The application is designed to count, list, or search for numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
 
-> **Project status:** Count mode works with `p` threads and is measured. List mode, search mode, and the shared counter are under development.
+> **Project status:** Count mode works with `p` threads and a shared counter, and is measured. List mode and search mode are under development.
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed; see open question 2). |
+| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
 
 ### Input parameters
 
@@ -144,7 +144,7 @@ git clone https://github.com/AJBouw/iban-calculator.git
 cd iban-calculator
 ```
 
-Configure, build and test the Release configuration:
+Configure, build, and test the Release configuration:
 
 ```bash
 cmake --workflow --preset release
@@ -237,7 +237,7 @@ Examples from the assignment:
 
 ## Project Structure
 
-The project uses a separation between application entry point, reusable implementation code, public interfaces, and tests.
+The project uses a separation between application entry point, reusable implementation code, public interfaces and tests.
 
 Current structure:
 
@@ -258,14 +258,19 @@ iban-calculator/
 ├── app/
 │   └── main.cpp            # Entry point only
 ├── benchmark/
-│   └── CountBenchmark.cpp  # Google Benchmark: count mode with 1, 2, 4, ... threads
+│   ├── CountBenchmark.cpp          # Google Benchmark: count mode with 1, 2, 4, ... threads
+│   └── CountVariantsBenchmark.cpp  # Shared counter, locks, atomic and result slots compared
 ├── docs/
+│   ├── decisions/          # Architecture decision records: options, choices and reasons
+│   ├── data/               # Raw benchmark results (JSON)
+│   ├── figures/            # Figures drawn from docs/data
 │   └── measurements.md     # Method and results of the measurements
 ├── include/
 │   └── iban/
 │       ├── application/
+│       │   ├── CountVariants.h # Ways to combine the counts of p threads, for measurement
 │       │   ├── Limits.h        # Input rules from the assignment (b, e, m, p)
-│       │   ├── ParallelCount.h # Count mode with p threads
+│       │   ├── ParallelCount.h # Count mode with p threads and a shared counter
 │       │   ├── Mode.h          # Operating mode u
 │       │   └── Query.h         # A validated request
 │       ├── domain/
@@ -273,11 +278,17 @@ iban-calculator/
 │       │   ├── MCheck.h        # Public interface of the m-check
 │       │   ├── Range.h         # Half-open range [begin, end)
 │       │   └── RangeSplit.h    # Fair split of a range into p parts
+│       ├── infrastructure/
+│       │   ├── BasicLockable.h # Concept for a lock type (lock and unlock)
+│       │   ├── ForkJoin.h      # Starts one thread per part and joins them all
+│       │   ├── SharedCounter.h # Counter protected by a lock, the lock as a template parameter
+│       │   └── SpinLock.h      # Lock that waits actively, to compare with std::mutex
 │       └── presentation/
 │           ├── ConsoleInput.h  # Asks for the input values
 │           └── InputParser.h   # Turns text into a validated Query
 ├── src/
 │   ├── application/
+│   │   ├── CountVariants.cpp
 │   │   └── ParallelCount.cpp
 │   ├── domain/
 │   │   ├── Count.cpp
@@ -296,6 +307,8 @@ iban-calculator/
 │   │       └── resources/
 │   │           ├── features/             # Scenarios in Gherkin (*.feature)
 │   │           └── junit-platform.properties
+│   ├── race/
+│   │   └── RaceDemo.cpp    # Shows the data race of a counter without a lock
 │   └── unit/
 │       ├── SetupTest.cpp
 │       ├── MCheckTest.cpp
@@ -303,22 +316,29 @@ iban-calculator/
 │       ├── ConsoleInputTest.cpp
 │       ├── RangeSplitTest.cpp
 │       ├── CountTest.cpp
-│       └── ParallelCountTest.cpp
+│       ├── ParallelCountTest.cpp
+│       ├── SharedCounterTest.cpp
+│       └── CountVariantsTest.cpp
+├── tools/
+│   ├── plot_speedup.py     # Draws the speedup figure from benchmark JSON
+│   └── requirements.txt    # Pinned Python packages for tools/
 └── build/                  # Generated; not committed
 ```
 
-Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artefacts are kept outside the source directories.
+Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artifacts are kept outside the source directories.
 
 ## Architecture and Design
 
 The intended design separates the application into responsibilities:
 
 - **Domain:** m-check validation and range-splitting algorithms.
-- **Application:** count, list, and search use cases, coordinating the required operations.
+- **Application:** count, list and search use cases, coordinating the required operations.
 - **Infrastructure:** thread management, synchronisation and other technical implementations.
-- **Presentation:** input parsing, parameter validation and console output.
+- **Presentation:** input parsing, parameter validation, and console output.
 
 The design aims to keep domain logic independent of threading and console input/output. This makes the algorithms easier to test in isolation and allows different concurrency strategies to be evaluated without changing the underlying validation rules.
+
+The reasons behind these and later choices, with the options that were considered, are recorded in [`docs/decisions/`](docs/decisions/README.md).
 
 All logic except `main()` lives in the static library `iban_core`. Both the program and the unit tests link it, so the tests exercise exactly the code that ships. Only `include/` is exposed to other targets.
 
@@ -346,20 +366,23 @@ All logic except `main()` lives in the static library `iban_core`. Both the prog
 
 ### Parallel count
 
-`countParallel` splits `[b, e)` into `p` parts and starts one thread per part. Each thread calls `countValid` (the sequential count from the domain layer) on its own part and writes the result to its own slot in a vector; the slots are added after all threads have been joined.
+`countParallel` splits `[b, e)` into `p` parts and starts one thread per part. Each thread calls `countValid` (the sequential count from the domain layer) on its own part, and then adds its count **once** to a **shared counter** protected by a `std::mutex`, as the assignment requires.
 
 ```text
 splitRange([b, e), p)  →  part 0   part 1   …   part p−1
                             │        │             │
                          thread 0 thread 1  …  thread p−1
+                     count locally, then lock, add, unlock (p times in total)
                             │        │             │
-counts                 [   c0   |   c1    | … |  cp−1   ]  →  sum after join
+                            └──── SharedCounter<std::mutex> ────┘  →  value after join
 ```
 
-- **No shared data while the threads run**: thread `i` only writes `counts[i]`, a separate memory location, so no lock is needed. After `join`, every write of a thread is visible to the caller.
-- **`std::thread` with explicit joins**, as in the lectures. If starting a thread fails, the threads already running are joined before the error is passed on; otherwise, `std::thread`'s destructor would call `std::terminate`. C++20 `std::jthread` would do this automatically (it joins in its destructor) and also offers a `std::stop_token`; the code explains this in comments.
+- **The lock is taken only `p` times**: the counting itself uses only local data, so the threads do not wait for each other while they count. A lock per valid number would also be correct, but every thread would wait for the same lock; the benchmark measures both (`docs/measurements.md`).
+- **The lock is a template parameter** (`SharedCounter<Lock>`, constrained by the C++20 concept `BasicLockable`), so `lock()` and `unlock()` can be inlined, and `SpinLock` can be measured with the same code. The options and the reasons are in [decision 0010](docs/decisions/0010-shared-counter-and-lock.md).
+- **RAII locking**: `std::lock_guard` releases the lock also when an exception is thrown.
+- **`std::thread` with explicit joins**, as in the lectures. If starting a thread fails, the threads already running are joined before the error is passed on; otherwise `std::thread`'s destructor would call `std::terminate`. C++20 `std::jthread` would do this automatically (it joins in its destructor) and also offers a `std::stop_token`; the code explains this in comments.
 - **Exactly `p` threads**: a thread with an empty part finishes immediately.
-- The assignment asks for a **shared counter** in count mode; that version is added separately, so its cost can be measured against this one (see `docs/measurements.md`).
+- **Starting and joining** is in one helper, `runInParallel` (`ForkJoin.h`), so every variant in `CountVariants.h` uses the same exception-safe thread handling.
 
 ### Input handling
 
@@ -371,9 +394,9 @@ Input passes through two layers before any calculation starts:
 Design choices:
 
 - **Invalid input is returned, not thrown.** A typing error by the user is expected behaviour, unlike an invalid argument inside the program (see the m-check). The parser returns a `ParseResult` with either a valid `Query` or a message; `std::expected` would express this directly but requires C++23.
-- **One source for every input rule.** `application/Limits.h` holds all bounds from the assignment. The parser, the help text, the error messages, the `Query` defaults, and the tests are built from these constants, so they cannot disagree.
+- **One source for every input rule.** `application/Limits.h` holds all bounds from the assignment. The parser, the help text, the error messages, the `Query` defaults and the tests are built from these constants, so they cannot disagree.
 - **A `Query` is always valid.** Only the parser creates one, so the rest of the program does not repeat the checks. `s` is a `std::optional`, because any number, including `-1` or `0`, could be real input.
-- **`Mode` is an `enum class`**, so a mode cannot be mixed up with an integer, and the compiler warns when a `switch` misses a mode.
+- **`Mode` is an `enum class`**, so a mode cannot be mixed up with an integer and the compiler warns when a `switch` misses a mode.
 
 The version number is defined once, in `project()` in `CMakeLists.txt`; CMake generates a header from `cmake/Version.h.in`, so the code never repeats it.
 
@@ -406,6 +429,9 @@ ctest --preset debug -L unit
 | `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions, and end of input. |
 | `CountValid` | The assignment examples (2 and 6), an empty range, `m = 1` and an invalid modulus. |
 | `ParallelCount` | The parallel count equals the sequential count for `p` = 1 … 16 and several moduli, also with more threads than numbers and with 256 threads. |
+| `SharedCounterTest` | With `std::mutex` and with `SpinLock`: start value, additions, and no lost addition when 16 threads add at the same time; the concept accepts both locks and rejects a type without `lock()`/`unlock()`. |
+| `RunInParallel` | Every index runs exactly once. |
+| `CountVariants` | Every way of combining the counts (result slots, atomic, mutex and spin lock per number and per thread) equals the sequential count for many thread counts and moduli. |
 | `RangeSplit` | The assignment example, the remainder distribution, more parts than values, and the three requirements (no gaps, no overlap, sizes differ by at most one) for thousands of combinations, including the largest range. |
 
 ### Planned test levels
@@ -475,9 +501,31 @@ cmake --build --preset release
 ./build/release/iban_benchmark --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
 ```
 
-The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results, and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
+The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
 
-Sanitizers and additional static-analysis tools will be added as part of the quality and verification stage.
+#### Data races and ThreadSanitizer
+
+A data race cannot be tested reliably with a normal test: a counter without a lock sometimes gives the right result by chance. Two tools show it instead:
+
+- **`iban_race_demo`** counts with a shared counter without a lock (`NoLock`) and prints how many increments were lost, next to the same count with `std::mutex` and `SpinLock`.
+- **ThreadSanitizer** (`tsan` preset) reports every data race while the program runs, with the lines of the two accesses. It reports the race in the demo, and none in the unit tests or the program.
+
+```bash
+./build/debug/iban_race_demo                  # lost updates without a lock
+
+cmake --preset tsan                           # Clang or GCC; not MSVC
+cmake --build --preset tsan
+./build/tsan/iban_race_demo                   # "WARNING: ThreadSanitizer: data race"
+ctest --preset tsan                           # all unit tests, no race reported
+```
+
+The variants are compared with a second benchmark program:
+
+```bash
+./build/release/iban_benchmark_variants --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
+```
+
+A sanitizer job in CI and static analysis follow in the quality stage.
 
 ## Development Workflow
 
@@ -579,7 +627,7 @@ Each step adds one concern, measured against the previous step where relevant, s
 | 3 | Fair range splitting | ✅ |
 | 4 | Count mode: sequential baseline compared with `p` threads, benchmark | ✅ |
 | 4b | End-to-end tests of the assignment examples in Gherkin (Cucumber, Java) | ✅ |
-| 5 | Shared counter: data race, mutex, local counting | ⬜ |
+| 5 | Shared counter: data race, mutex, local counting, spin lock, ThreadSanitizer | ✅ |
 | 6 | List mode | ⬜ |
 | 7 | Search mode with atomic stop flag and early termination | ⬜ |
 | 8 | Performance comparison, including an incremental m-check walker | ⬜ |
