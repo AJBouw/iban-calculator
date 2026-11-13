@@ -4,9 +4,9 @@
 
 A multithreaded command-line application written in modern C++20. It generalises the Dutch 11-check (11-proef) into an *m-check* and is developed for the Concurrent Programming module.
 
-The application counts, lists, or searches for numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
+The application is designed to count, list or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
 
-> **Project status:** The project setup, the m-check, the input handling, and the fair range split are complete and tested. The program asks for the input, validates it, and reports what it will run. The operating modes and multithreading are under development.
+> **Project status:** The project setup, the m-check, the input handling and the fair range split are complete and tested. The program asks for the input, validates it and reports what it will run. The operating modes and multithreading are under development.
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check, otherwise print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
+| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed; see open question 2). |
 
 ### Input parameters
 
@@ -129,7 +129,7 @@ pipx install clang-format==21.1.8
 
 **Windows**
 
-Install Visual Studio 2022 with the *Desktop development with C++* workload, CMake and Ninja. Git can be installed from [git-scm.com](https://git-scm.com/).
+Install Visual Studio 2022 with the *Desktop development with C++* workload, CMake, and Ninja. Git can be installed from [git-scm.com](https://git-scm.com/).
 
 ### Build, test and run
 
@@ -168,7 +168,7 @@ Run the application:
 
 ### Individual build steps
 
-The workflow preset combines configuration, compilation and testing. These steps can also be executed separately:
+The workflow preset combines configuration, compilation, and testing. These steps can also be executed separately:
 
 ```bash
 cmake --preset debug
@@ -293,7 +293,7 @@ The intended design separates the application into responsibilities:
 - **Infrastructure:** thread management, synchronisation and other technical implementations.
 - **Presentation:** input parsing, parameter validation and console output.
 
-The design aims to keep domain logic independent of threading and console input/output. This makes the algorithms easier to test in isolation and allows different concurrency strategies to be evaluated without changing the underlying validation rules.
+The design aims to keep domain logic independent of threading and console input/output. This makes the algorithms easier to test in isolation and lets you evaluate different concurrency strategies without changing the underlying validation rules.
 
 All logic except `main()` lives in the static library `iban_core`. Both the program and the unit tests link it, so the tests exercise exactly the code that ships. Only `include/` is exposed to other targets.
 
@@ -317,7 +317,7 @@ All logic except `main()` lives in the static library `iban_core`. Both the prog
 - **Half-open ranges** (`Range{begin, end}`) make adjacent parts share a boundary without overlap, matching `[b, e)` in the assignment.
 - **Contiguous blocks instead of interleaving** (`x, x + p, x + 2p, …`): each thread works on consecutive numbers, which an incremental m-check can reuse and which keeps memory access local.
 - **Always exactly `p` parts.** When `p > n`, the last parts are empty; each thread still gets a part, as the assignment requires `p` threads.
-- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the size of the range.
+- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the range size.
 
 ### Input handling
 
@@ -361,7 +361,7 @@ ctest --preset debug -L unit
 | `WeightedDigitSumTest` | Hand-calculated sums, including 0, 2³¹ − 1 and the largest 10-digit sum. |
 | `PassesMCheck` | The assignment example, error detection with `m = 11`, and rejection of invalid arguments. |
 | `InputParser` | The assignment examples, the three input forms, the boundary values and one test per validation rule. |
-| `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions and end of input. |
+| `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions, and end of input. |
 | `RangeSplit` | The assignment example, the remainder distribution, more parts than values, and the three requirements (no gaps, no overlap, sizes differ by at most one) for thousands of combinations, including the largest range. |
 
 ### Planned test levels
@@ -386,7 +386,7 @@ Additional validation will focus on:
 
 Performance measurements are taken with Release builds only; Debug builds are not optimised and would not give representative results.
 
-Sanitizers and additional static-analysis tools will be added during the quality and verification stage.
+Sanitizers and additional static-analysis tools will be added as part of the quality and verification stage.
 
 ## Development Workflow
 
@@ -411,6 +411,23 @@ Every push and pull request to `main` or `develop` runs `.github/workflows/conti
 | `format-check` | Verify formatting against `.clang-format` |
 
 A pull request is merged only when all four checks pass. Dependabot keeps the GitHub Actions versions up to date.
+
+### Build system: why CMake
+
+The assignment does not prescribe a build system; a single command such as `g++ -std=c++20 -pthread …` (as in the lectures) would compile the program. CMake is used because the project needs more than one compiler call:
+
+| Need | How CMake provides it |
+|---|---|
+| Build on macOS, Linux and Windows (Clang, GCC, MSVC) | One description generates the native build for each compiler; CI uses it on all three platforms. |
+| Portable thread support | `Threads::Threads` adds `-pthread` where a platform needs it, instead of a compiler-specific flag. |
+| Debug for development, Release for measurements | Presets (`debug`, `release`) give two separate builds; measurements are only valid in Release. |
+| Unit tests in the same build | GoogleTest is fetched at a pinned version and every test is registered with CTest. |
+| One library for program and tests | `iban_core` is compiled once and linked by both, so the tests check the shipped code. |
+| Formatting check | `format` and `format-check` targets use the pinned clang-format version. |
+| Version number in one place | `project(VERSION …)` generates `Version.h`. |
+| IDE support | CLion and Visual Studio open the project directly from `CMakeLists.txt`. |
+
+Trade-off: CMake is an extra language to learn and maintain. Alternatives were considered: a Makefile does not work with MSVC without extra tools, Meson and Bazel are less common in C++ courses, and IDE project files tie the project to one IDE. CMake is the de facto standard for C++ projects.
 
 ### Commits
 
@@ -454,11 +471,11 @@ cmake --build --preset debug --target format-check
 
 Public interfaces and non-obvious implementation decisions are documented using Doxygen-style comments.
 
-Comments should explain design decisions, invariants, complexity, and relevant requirements rather than simply restating what the code does.
+Comments should explain design decisions, invariants, complexity and relevant requirements rather than simply restating what the code does.
 
 ## Status and Roadmap
 
-Each step adds one concern, measured against the previous step where relevant, so you can explain the effect of every change.
+Each step adds one concern, measured against the previous step where relevant, so the effect of every change can be explained.
 
 | Step | Component | Status |
 |---:|---|:---:|
@@ -489,6 +506,6 @@ The following points still need to be clarified against the original assignment 
 
 3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, `passesMCheck(0, m)` returns `true`. Whether zero should be counted as a valid account number will be checked against the assignment requirements.
 
-4. **Thread pool and synchronisation:** The exact implementation strategy will be determined during development and evaluated against correctness, performance and the concurrency assessment criteria.
+4. **Thread pool and synchronisation:** The exact implementation strategy will be determined during development and evaluated against correctness, performance, and the concurrency assessment criteria.
 
-These assumptions will be updated when the assignment interpretation has been confirmed.
+These assumptions will be updated once the assignment interpretation is confirmed.
