@@ -56,7 +56,7 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check, otherwise print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
+| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed; see open question 2). |
 
 ### Input parameters
 
@@ -307,14 +307,14 @@ iban-calculator/
 └── build/                  # Generated; not committed
 ```
 
-Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artifacts are kept outside the source directories.
+Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artefacts are kept outside the source directories.
 
 ## Architecture and Design
 
 The intended design separates the application into responsibilities:
 
 - **Domain:** m-check validation and range-splitting algorithms.
-- **Application:** count, list and search use cases, coordinating the required operations.
+- **Application:** count, list, and search use cases, coordinating the required operations.
 - **Infrastructure:** thread management, synchronisation and other technical implementations.
 - **Presentation:** input parsing, parameter validation and console output.
 
@@ -430,16 +430,26 @@ ctest --preset debug -L e2e --output-on-failure
 
 CTest starts Maven with the path to the built program. The first run downloads Cucumber and JUnit. Use `-V` to see every step, and open `tests/e2e/target/cucumber-report.html` for the report.
 
+Current scenarios (33 in total):
+
+| Feature | Verifies |
+|---|---|
+| `count_mode.feature` | The assignment examples, a single number valid (1) or invalid (0), the three one-line forms and input per question, and the same result for `p` = 1, 2, 3, 8, 20 and 256 (an end-to-end check of the parallel count). |
+| `input_errors.feature` | No input, missing values, and one example per validation rule (b, e, m, p, u, s, invalid numbers): message on standard error, no output, exit code 1. |
+
+The assignment examples are tagged `@assignment`; run only those with `mvn -f tests/e2e/pom.xml test -Diban.executable=<path to iban> -Dcucumber.filter.tags=@assignment`.
+
 Scenarios are written in `tests/e2e/src/test/resources/features/`. These steps are available:
 
 | Step | Meaning |
 |---|---|
-| `Given the input "…"` | One line of input, for example all values on one line |
+| `Given the input "…"` | One line of input, for example, all values on one line |
 | `Given the input lines:` (with a `"""` block) | Several lines of input, one answer per question |
 | `Given no input` | Standard input is closed immediately |
 | `When the program runs` | Starts the program (time limit 30 seconds) |
 | `Then the output is "…"` | Standard output equals this single line |
 | `Then the output is:` (with a `"""` block) | Standard output equals these lines |
+| `Then the program counts 2 valid account numbers` | Count mode: standard output is this number (also `1 valid account number`) |
 | `Then the output is empty` | Nothing on standard output |
 | `Then the program succeeds` | Exit code 0 |
 | `Then the program fails` | Exit code other than 0 |
@@ -465,7 +475,7 @@ cmake --build --preset release
 ./build/release/iban_benchmark --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
 ```
 
-The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
+The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results, and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
 
 Sanitizers and additional static-analysis tools will be added as part of the quality and verification stage.
 
@@ -568,7 +578,7 @@ Each step adds one concern, measured against the previous step where relevant, s
 | 2 | Input: asking per field, parsing and validation | ✅ |
 | 3 | Fair range splitting | ✅ |
 | 4 | Count mode: sequential baseline compared with `p` threads, benchmark | ✅ |
-| 4b | End-to-end tests of the assignment examples in Gherkin (Cucumber, Java) | 🔄 |
+| 4b | End-to-end tests of the assignment examples in Gherkin (Cucumber, Java) | ✅ |
 | 5 | Shared counter: data race, mutex, local counting | ⬜ |
 | 6 | List mode | ⬜ |
 | 7 | Search mode with atomic stop flag and early termination | ⬜ |
@@ -595,4 +605,4 @@ The following points still need to be clarified against the original assignment 
 
 4. **Thread pool and synchronisation:** The exact implementation strategy will be determined during development and evaluated against correctness, performance, and the concurrency assessment criteria.
 
-These assumptions will be updated once the assignment interpretation is confirmed.
+These assumptions will be updated when the assignment interpretation has been confirmed.
