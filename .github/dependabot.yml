@@ -12,3 +12,16 @@ updates:
     labels:
       - dependencies
       - ci
+  # Cucumber and JUnit versions of the end-to-end tests (tests/e2e/pom.xml).
+  - package-ecosystem: maven
+    directory: "/tests/e2e"
+    target-branch: develop
+    schedule:
+      interval: daily
+      time: "00:15"
+      timezone: "Europe/Amsterdam"
+    commit-message:
+      prefix: test
+    labels:
+      - dependencies
+      - maven
