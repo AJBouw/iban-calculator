@@ -4,9 +4,9 @@
 
 A multithreaded command-line application written in modern C++20. It generalises the Dutch 11-check (11-proef) into an *m-check* and is developed for the Concurrent Programming module.
 
-The application is designed to count, list or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
+The application counts, lists, or searches for numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
 
-> **Project status:** The project setup, the m-check and the input handling are complete and tested. The program asks for the input, validates it and reports what it will run. The operating modes and multithreading are under development.
+> **Project status:** The project setup, the m-check, the input handling, and the fair range split are complete and tested. The program asks for the input, validates it, and reports what it will run. The operating modes and multithreading are under development.
 
 ## Table of Contents
 
@@ -75,6 +75,7 @@ The program asks for input on the console and reads one line. The assignment des
 
 - Divide the range `[b, e)` between `p` threads without gaps or overlap.
 - Ensure that the workloads of the threads differ by at most one number.
+- Use exactly `p` threads. When `p` exceeds the number of values, some threads receive an empty range and finish immediately.
 - Count mode: keep the result in a shared counter.
 - List mode: write each valid number immediately, with ascending sequence numbers.
 - Search mode: the other threads stop promptly after a result is found; print `-1` if nothing is found.
@@ -258,13 +259,16 @@ iban-calculator/
 │       │   ├── Mode.h          # Operating mode u
 │       │   └── Query.h         # A validated request
 │       ├── domain/
-│       │   └── MCheck.h        # Public interface of the m-check
+│       │   ├── MCheck.h        # Public interface of the m-check
+│       │   ├── Range.h         # Half-open range [begin, end)
+│       │   └── RangeSplit.h    # Fair split of a range into p parts
 │       └── presentation/
 │           ├── ConsoleInput.h  # Asks for the input values
 │           └── InputParser.h   # Turns text into a validated Query
 ├── src/
 │   ├── domain/
-│   │   └── MCheck.cpp          # Reference implementation of the m-check
+│   │   ├── MCheck.cpp          # Reference implementation of the m-check
+│   │   └── RangeSplit.cpp
 │   └── presentation/
 │       ├── ConsoleInput.cpp
 │       └── InputParser.cpp
@@ -273,7 +277,8 @@ iban-calculator/
 │       ├── SetupTest.cpp
 │       ├── MCheckTest.cpp
 │       ├── InputParserTest.cpp
-│       └── ConsoleInputTest.cpp
+│       ├── ConsoleInputTest.cpp
+│       └── RangeSplitTest.cpp
 └── build/                  # Generated; not committed
 ```
 
@@ -300,6 +305,19 @@ All logic except `main()` lives in the static library `iban_core`. Both the prog
 - **`std::int64_t`** is used for numbers, leaving headroom for calculations with the bounds and intermediate results.
 - **Thread-safe** by design: both functions use only their arguments and local variables, so concurrent calls share no mutable state.
 - This implementation is deliberately simple. Faster variants are verified against it.
+
+### Range split
+
+`splitRange` divides the range `[b, e)` into exactly `p` contiguous parts. With `n = e − b` values, every part gets `q = n / p` values and the first `r = n % p` parts get one extra, so part sizes differ by at most one. Each part starts where the previous one ends, so the parts cover the range without gaps or overlap.
+
+```text
+[0, 10) into 4 parts:  q = 2, r = 2  →  [0, 3) [3, 6) [6, 8) [8, 10)
+```
+
+- **Half-open ranges** (`Range{begin, end}`) make adjacent parts share a boundary without overlap, matching `[b, e)` in the assignment.
+- **Contiguous blocks instead of interleaving** (`x, x + p, x + 2p, …`): each thread works on consecutive numbers, which an incremental m-check can reuse and which keeps memory access local.
+- **Always exactly `p` parts.** When `p > n`, the last parts are empty; each thread still gets a part, as the assignment requires `p` threads.
+- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the size of the range.
 
 ### Input handling
 
@@ -344,6 +362,7 @@ ctest --preset debug -L unit
 | `PassesMCheck` | The assignment example, error detection with `m = 11`, and rejection of invalid arguments. |
 | `InputParser` | The assignment examples, the three input forms, the boundary values and one test per validation rule. |
 | `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions and end of input. |
+| `RangeSplit` | The assignment example, the remainder distribution, more parts than values, and the three requirements (no gaps, no overlap, sizes differ by at most one) for thousands of combinations, including the largest range. |
 
 ### Planned test levels
 
@@ -367,7 +386,7 @@ Additional validation will focus on:
 
 Performance measurements are taken with Release builds only; Debug builds are not optimised and would not give representative results.
 
-Sanitizers and additional static-analysis tools will be added as part of the quality and verification stage.
+Sanitizers and additional static-analysis tools will be added during the quality and verification stage.
 
 ## Development Workflow
 
@@ -435,18 +454,18 @@ cmake --build --preset debug --target format-check
 
 Public interfaces and non-obvious implementation decisions are documented using Doxygen-style comments.
 
-Comments should explain design decisions, invariants, complexity and relevant requirements rather than simply restating what the code does.
+Comments should explain design decisions, invariants, complexity, and relevant requirements rather than simply restating what the code does.
 
 ## Status and Roadmap
 
-Each step adds one concern, measured against the previous step where relevant, so the effect of every change can be explained.
+Each step adds one concern, measured against the previous step where relevant, so you can explain the effect of every change.
 
 | Step | Component | Status |
 |---:|---|:---:|
 | 0 | Project setup: CMake presets, version header, smoke tests, formatting, CI | ✅ |
 | 1 | m-check: reference implementation in the core library | ✅ |
 | 2 | Input: asking per field, parsing and validation | ✅ |
-| 3 | Fair range splitting | ⬜ |
+| 3 | Fair range splitting | ✅ |
 | 4 | Sequential baseline compared with `p` threads | ⬜ |
 | 5 | Shared counter: data race, mutex, local counting | ⬜ |
 | 6 | List mode | ⬜ |
@@ -466,7 +485,7 @@ The following points still need to be clarified against the original assignment 
    - **B:** `s` is not used; the program searches for any valid number in the range.
    - **C:** `s` is a starting point for the search.
 
-   In every interpretation one thread must stop the others promptly, which is the concurrency requirement this mode tests.
+   In every interpretation, one thread must stop the others promptly, which is the concurrency requirement this mode tests.
 
 3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, `passesMCheck(0, m)` returns `true`. Whether zero should be counted as a valid account number will be checked against the assignment requirements.
 
