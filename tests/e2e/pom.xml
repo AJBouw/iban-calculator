@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  End-to-end tests for the IBAN Calculator with Cucumber (Java).
+  The tests start the compiled program as a separate process, give it input on
+  standard input and check its output and exit code. They only test behaviour
+  that a user can see; the unit tests (GoogleTest) cover the internals.
+
+  Run via CTest:  configure with -DIBAN_BUILD_E2E_TESTS=ON, then run ctest with the label e2e.
+  Run directly:   mvn -f tests/e2e/pom.xml test -Diban.executable=<path to iban>
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>nl.iban</groupId>
+    <artifactId>iban-e2e-tests</artifactId>
+    <version>0.1.0</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <!-- Java 25 is the current long-term support release used in CI. -->
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Path to the program under test; CTest passes it with -Diban.executable. -->
+        <iban.executable></iban.executable>
+    </properties>
+
+    <!-- Pinned versions via BOMs, so all Cucumber and JUnit modules match.
+         Dependabot proposes updates. -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.cucumber</groupId>
+                <artifactId>cucumber-bom</artifactId>
+                <version>7.20.1</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>5.11.3</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Step definitions in Java (@Given, @When, @Then). -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Runs the .feature files on the JUnit Platform, so Maven Surefire finds them. -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Assertions (assertEquals, assertTrue) in the step definitions. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <!-- Passes the path of the program to the test JVM. -->
+                    <systemPropertyVariables>
+                        <iban.executable>${iban.executable}</iban.executable>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

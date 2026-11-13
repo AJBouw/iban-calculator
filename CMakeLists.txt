@@ -20,6 +20,10 @@ option(IBAN_BUILD_TESTS "Build the test suites" ON)
 # for measurements with: cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
 option(IBAN_BUILD_BENCHMARKS "Build the benchmark program" OFF)
 
+# Off by default: the end-to-end tests need Java 25 and Maven. Enable them with
+# -DIBAN_BUILD_E2E_TESTS=ON and run them with: ctest --preset debug -L e2e
+option(IBAN_BUILD_E2E_TESTS "Register the Cucumber end-to-end tests with CTest" OFF)
+
 # Portable thread library (adds -pthread where the platform needs it).
 find_package(Threads REQUIRED)
 
@@ -172,6 +176,27 @@ if(IBAN_BUILD_TESTS)
 
     # Register individual GoogleTest cases with CTest.
     gtest_discover_tests(iban_unit_tests PROPERTIES LABELS unit)
+endif()
+
+# ---------------------------------------------------------------------------
+# End-to-end tests
+# ---------------------------------------------------------------------------
+# Cucumber scenarios (tests/e2e) start the compiled program as a separate
+# process and check its output and exit code. Maven runs them; CTest only
+# starts Maven, so `ctest -L e2e` runs them like every other test.
+if(IBAN_BUILD_E2E_TESTS)
+    enable_testing()
+    # mvn.cmd is the name of the Maven launcher on Windows.
+    find_program(MAVEN_EXECUTABLE NAMES mvn mvn.cmd REQUIRED)
+    # $<TARGET_FILE:iban> is the full path of the built program, including
+    # .exe on Windows, so the scenarios test exactly this build.
+    add_test(
+            NAME e2e.cucumber
+            COMMAND ${MAVEN_EXECUTABLE} --batch-mode
+            --file ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/pom.xml
+            test -Diban.executable=$<TARGET_FILE:iban>)
+    # The first run downloads the Cucumber and JUnit libraries.
+    set_tests_properties(e2e.cucumber PROPERTIES LABELS e2e TIMEOUT 600)
 endif()
 
 # ---------------------------------------------------------------------------
