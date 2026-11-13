@@ -71,8 +71,10 @@ often the threads touch it, and how the lock type reaches the counter.
 
 - The counter is shared and protected, as the assignment requires, and the lock
   is held only p times, as the assessment criteria ask.
-- The speed of the program should equal the result-slot version; the benchmark
-  shows it (`docs/measurements.md`).
+- The speed of the program equals the result-slot version. Measured on the M1
+  Pro (`docs/measurements.md`, step 5): 7.7 to 8.5 ms with 8 or 16 threads
+  for ten million numbers, for both variants. With 16 threads, a lock per
+  valid number takes 155 to 244 ms, and an atomic per valid number up to 806 ms.
 - Changing the lock means recompiling; a run-time choice is not needed, because
   the program always uses one lock.
 - The variants with a lock per number exist only to measure the cost of

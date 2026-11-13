@@ -196,9 +196,42 @@ As in step 4: other programs closed, load average below about 2 (`uptime`), medi
 - The variants per hit slower with more threads, and much slower with m = 1, because all threads wait for the same lock or the same cache line (contention).
 - `SpinLock` faster than `std::mutex` per hit while p is at most the number of cores, and worse beyond that, when a waiting thread spins on a core the lock holder needs.
 
-### Results
+### Results (2026-11-13, other programs closed)
 
-To be added after the measurement on the M1 Pro.
+Measured on the M1 Pro (see *Machine*) with load average about 4, median of 5 repetitions, times in milliseconds for the range `[0, 10⁷)`. The raw results are in [`data/step5-variants.json`](data/step5-variants.json).
+
+**m = 11** (about 9% of the numbers are valid):
+
+| Variant | p = 1 | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---:|---:|---:|---:|---:|
+| `result_slots` | 60.1 | 32.1 | 16.7 | 8.52 | 8.12 |
+| **`mutex_per_thread`** (the program) | **59.6** | **30.3** | **15.2** | **8.01** | **7.78** |
+| `spin_lock_per_thread` | 59.6 | 30.3 | 15.2 | 7.74 | 7.83 |
+| `atomic_per_hit` | 83.2 | 49.1 | 39.8 | 64.1 | 90.0 |
+| `mutex_per_hit` | 75.1 | 80.6 | 137 | 178 | 155 |
+| `spin_lock_per_hit` | 72.9 | 54.9 | 70.2 | 193 | 104 |
+
+**m = 1** (every number is valid, so the variants per hit synchronise for every number):
+
+| Variant | p = 1 | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---:|---:|---:|---:|---:|
+| `result_slots` | 59.6 | 30.3 | 15.2 | 7.87 | 7.83 |
+| **`mutex_per_thread`** (the program) | **59.6** | **30.3** | **15.2** | **7.80** | **7.80** |
+| `spin_lock_per_thread` | 59.6 | 30.3 | 15.2 | 7.77 | 7.94 |
+| `atomic_per_hit` | 59.2 | 417 | 189 | 361 | 806 |
+| `mutex_per_hit` | 112 | 202 | 282 | 255 | 244 |
+| `spin_lock_per_hit` | 64.1 | 119 | 216 | 498 | 170 |
+
+The spread was at most 1% for the variants per thread with p ≤ 4 and up to 9% at p = 8 and 16; `spin_lock_per_hit` with p = 8 and m = 1 was very unstable (cv 38%).
+
+### Observations
+
+- **A shared counter that is locked once per thread costs nothing measurable.** `mutex_per_thread` is as fast as the result slots of step 4 for every p and both moduli: 7.4× faster with 8 threads than with 1. p locked additions disappear next to ten million m-checks. The assignment's shared counter therefore needs no compromise in speed.
+- **A lock per valid number makes more threads slower than one thread.** With m = 1, `mutex_per_hit` takes 112 ms with one thread and 244 ms with 16; the program needs 7.8 ms. All threads wait for the same lock, so the work is effectively done one number at a time, with the cost of handing the lock over on top (contention).
+- **Lock-free is not contention-free.** `atomic_per_hit` costs nothing with one thread (59.2 ms, as fast as the program), because an uncontended atomic increment is cheap. With more threads every increment moves the counter's cache line to another core: with m = 1 and 16 threads it takes 806 ms, about 100× slower than the program and even slower than the mutex. A waiting mutex lets the other threads sleep, so the line moves less often.
+- **The cost of one uncontended lock.** With one thread and m = 1 there are ten million lock/unlock pairs and no waiting: `mutex_per_hit` adds about 52 ms (about 5 ns per pair), `spin_lock_per_hit` about 4.5 ms (about 0.5 ns per pair). Without contention a spin lock is cheaper than a mutex.
+- **The spin lock is fast for few threads and unpredictable for many.** With 2 threads it beats the mutex (55 against 81 ms with m = 11), but with 8 threads it is the slowest variant with m = 11 and very unstable with m = 1, although 8 threads fit on the 8 performance cores. The threads waiting in the loop compete for the same cache line as the holder. The expected advantage of the spin lock up to the number of cores is therefore *not* confirmed.
+- **Conclusion:** the decision in [0010](decisions/0010-shared-counter-and-lock.md) is confirmed. How often the threads synchronise matters far more than which lock they use: once per thread, every lock is fast; once per number, every lock (and the atomic) is slow.
 
 ## Figures for the report
 
@@ -237,4 +270,3 @@ The benchmark follows the official Google Benchmark documentation. After a build
 | Stable measurements | [Reducing Variance](https://github.com/google/benchmark/blob/main/docs/reducing_variance.md) | The *Conditions* row of the method |
 | Why the speedup levels off | [Amdahl's law](https://en.wikipedia.org/wiki/Amdahl%27s_law) | Interpreting the observations |
 | Measuring C++ code in general | Chandler Carruth, *Tuning C++: Benchmarks, and CPUs, and Compilers! Oh My!*, CppCon 2015 | Background on benchmarks and `DoNotOptimize` |
-
