@@ -127,7 +127,7 @@ jobs:
             echo "**Legend:** first line = measured speedup; second line = ideal speedup (threads, at most ${cpus} CPUs)."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-ubuntu
           path: benchmark.json
@@ -159,7 +159,7 @@ jobs:
       # Also kept when a scenario fails, so the report shows which one.
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cucumber-report
           path: tests/e2e/target/cucumber-report.html
