@@ -12,16 +12,16 @@
 
 namespace iban::application {
 
-    /// @brief Counts the valid numbers in [query.begin, query.end) using exactly
-    ///        query.threadCount threads.
-    ///
-    /// Every thread writes its result to its own slot, so no data is shared while
-    /// the threads run and no lock is needed; the slots are added after all
-    /// threads have been joined. A thread whose part is empty finishes at once.
-    /// @param query A validated query; the mode is not used.
-    /// @return The number of values that pass the m-check with query.modulus.
-    /// @throws std::system_error when a thread cannot be started; threads that
-    ///         were already started are joined first.
-    [[nodiscard]] std::int64_t countParallel(const Query &query);
+/// @brief Counts the valid numbers in [query.begin, query.end) using exactly
+///        query.threadCount threads.
+///
+/// Every thread writes its result to its own slot, so no data is shared while
+/// the threads run and no lock is needed; the slots are added after all
+/// threads have been joined. A thread whose part is empty finishes at once.
+/// @param query A validated query; the mode is not used.
+/// @return The number of values that pass the m-check with query.modulus.
+/// @throws std::system_error when a thread cannot be started; threads that
+///         were already started are joined first.
+[[nodiscard]] std::int64_t countParallel(const Query& query);
 
-} // namespace iban::application
+}  // namespace iban::application
