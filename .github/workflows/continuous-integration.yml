@@ -71,3 +71,41 @@ jobs:
 
       - name: Check formatting
         run: cmake --build --preset debug --target format-check
+        
+    # Builds the benchmark and runs every thread count once, so a change that
+  # breaks it is noticed. Timings on shared CI runners vary too much to draw
+  # conclusions; measurements are taken locally (docs/measurements.md).
+  benchmark-smoke:
+    name: benchmark (smoke run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+      - name: Configure
+        run: cmake --preset release -DIBAN_BUILD_TESTS=OFF -DIBAN_BUILD_BENCHMARKS=ON
+      - name: Build
+        run: cmake --build --preset release --target iban_benchmark
+      - name: Run once per thread count
+        run: >
+          ./build/release/iban_benchmark
+          --benchmark_min_time=1x
+          --benchmark_out=benchmark.json
+          --benchmark_out_format=json
+      # The table appears on the Summary page of the run.
+      - name: Show the results on the run page
+        run: |
+          {
+            echo "### Benchmark (smoke run, indicative only)"
+            echo ""
+            echo "Shared CI runner: timings vary between runs. See docs/measurements.md for the measurements."
+            echo ""
+            echo "| Benchmark | Real time (ms) |"
+            echo "|---|---:|"
+            jq -r '.benchmarks[] | "| \(.name) | \((.real_time * 100 | round) / 100) |"' benchmark.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the output
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-ubuntu
+          path: benchmark.json
