@@ -1,4 +1,7 @@
 # Build definition for the IBAN Calculator project.
+# The assignment does not require a build system; CMake is used for portable
+# builds on three platforms, Debug/Release presets, tests, and formatting.
+# The full rationale is in README.md, section "Build system: why CMake".
 
 # 3.31 is required for CMakePresets.json schema version 10 ($comment support).
 cmake_minimum_required(VERSION 3.31)
@@ -45,6 +48,8 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 # LEARN: STATIC: the code is copied into each program that links it (a .a file).
 add_library(
         iban_core STATIC
+        src/application/ParallelCount.cpp
+        src/domain/Count.cpp
         src/domain/MCheck.cpp
         src/domain/RangeSplit.cpp
         src/presentation/ConsoleInput.cpp
@@ -53,6 +58,9 @@ add_library(
 # Only include/ is public: code that links iban_core can include these headers.
 # LEARN: PUBLIC: iban_core itself AND everything that links it get this path.
 target_include_directories(iban_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# The library starts threads (parallel count). PUBLIC: every target that links
+# iban_core also gets the thread library, so it does not have to repeat it.
+target_link_libraries(iban_core PUBLIC Threads::Threads)
 iban_set_warnings(iban_core)
 
 # ---------------------------------------------------------------------------
@@ -62,7 +70,7 @@ iban_set_warnings(iban_core)
 add_executable(iban app/main.cpp)
 # Generated headers live in the build folder, not in the source tree.
 target_include_directories(iban PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-target_link_libraries(iban PRIVATE iban_core Threads::Threads)
+target_link_libraries(iban PRIVATE iban_core)
 iban_set_warnings(iban)
 
 # ---------------------------------------------------------------------------
@@ -145,13 +153,14 @@ if(IBAN_BUILD_TESTS)
     endforeach()
 
     # LEARN: gtest_main provides a main() that runs every TEST(...) in the files.
-    add_executable(
-            iban_unit_tests
+    add_executable(iban_unit_tests
             tests/unit/SetupTest.cpp
             tests/unit/MCheckTest.cpp
             tests/unit/InputParserTest.cpp
             tests/unit/ConsoleInputTest.cpp
             tests/unit/RangeSplitTest.cpp
+            tests/unit/CountTest.cpp
+            tests/unit/ParallelCountTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
