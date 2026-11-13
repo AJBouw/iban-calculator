@@ -46,6 +46,7 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 add_library(
         iban_core STATIC
         src/domain/MCheck.cpp
+        src/domain/RangeSplit.cpp
         src/presentation/ConsoleInput.cpp
         src/presentation/InputParser.cpp
 )
@@ -146,10 +147,11 @@ if(IBAN_BUILD_TESTS)
     # LEARN: gtest_main provides a main() that runs every TEST(...) in the files.
     add_executable(
             iban_unit_tests
-            tests/unit/ConsoleInputTest.cpp
-            tests/unit/InputParserTest.cpp
-            tests/unit/MCheckTest.cpp
             tests/unit/SetupTest.cpp
+            tests/unit/MCheckTest.cpp
+            tests/unit/InputParserTest.cpp
+            tests/unit/ConsoleInputTest.cpp
+            tests/unit/RangeSplitTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
