@@ -1,4 +1,7 @@
 # Build definition for the IBAN Calculator project.
+# The assignment does not require a build system; CMake is used for portable
+# builds on three platforms, Debug/Release presets, tests, and formatting.
+# The full rationale is in README.md, section "Build system: why CMake".
 
 # 3.31 is required for CMakePresets.json schema version 10 ($comment support).
 cmake_minimum_required(VERSION 3.31)
@@ -12,6 +15,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)        # standard C++ only, no compiler extensions
 
 # Build unit tests by default. Can be disabled with -DIBAN_BUILD_TESTS=OFF.
 option(IBAN_BUILD_TESTS "Build the test suites" ON)
+
+# Off by default: CI and normal builds do not need Google Benchmark. Enable it
+# for measurements with: cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
+option(IBAN_BUILD_BENCHMARKS "Build the benchmark program" OFF)
 
 # Portable thread library (adds -pthread where the platform needs it).
 find_package(Threads REQUIRED)
@@ -43,8 +50,9 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 # All logic except main() lives in one library, linked by both the program and
 # the tests, so the tests exercise exactly the code that ships.
 # LEARN: STATIC: the code is copied into each program that links it (a .a file).
-add_library(
-        iban_core STATIC
+add_library(iban_core STATIC
+        src/application/ParallelCount.cpp
+        src/domain/Count.cpp
         src/domain/MCheck.cpp
         src/domain/RangeSplit.cpp
         src/presentation/ConsoleInput.cpp
@@ -53,6 +61,9 @@ add_library(
 # Only include/ is public: code that links iban_core can include these headers.
 # LEARN: PUBLIC: iban_core itself AND everything that links it get this path.
 target_include_directories(iban_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# The library starts threads (parallel count). PUBLIC: every target that links
+# iban_core also gets the thread library, so it does not have to repeat it.
+target_link_libraries(iban_core PUBLIC Threads::Threads)
 iban_set_warnings(iban_core)
 
 # ---------------------------------------------------------------------------
@@ -62,7 +73,7 @@ iban_set_warnings(iban_core)
 add_executable(iban app/main.cpp)
 # Generated headers live in the build folder, not in the source tree.
 target_include_directories(iban PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-target_link_libraries(iban PRIVATE iban_core Threads::Threads)
+target_link_libraries(iban PRIVATE iban_core)
 iban_set_warnings(iban)
 
 # ---------------------------------------------------------------------------
@@ -84,6 +95,7 @@ if(CLANG_FORMAT_EXECUTABLE)
     # CONFIGURE_DEPENDS re-runs the glob when files are added or removed.
     file(GLOB_RECURSE IBAN_FORMAT_FILES CONFIGURE_DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/app/*.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
             ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp
@@ -145,13 +157,14 @@ if(IBAN_BUILD_TESTS)
     endforeach()
 
     # LEARN: gtest_main provides a main() that runs every TEST(...) in the files.
-    add_executable(
-            iban_unit_tests
+    add_executable(iban_unit_tests
             tests/unit/SetupTest.cpp
             tests/unit/MCheckTest.cpp
             tests/unit/InputParserTest.cpp
             tests/unit/ConsoleInputTest.cpp
             tests/unit/RangeSplitTest.cpp
+            tests/unit/CountTest.cpp
+            tests/unit/ParallelCountTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
@@ -159,4 +172,31 @@ if(IBAN_BUILD_TESTS)
 
     # Register individual GoogleTest cases with CTest.
     gtest_discover_tests(iban_unit_tests PROPERTIES LABELS unit)
+endif()
+
+# ---------------------------------------------------------------------------
+# Benchmark
+# ---------------------------------------------------------------------------
+# Measures the count mode with 1 to 12, 16 and 32 threads. A separate program,
+# not a test: it takes seconds and its output is a time, not pass or fail.
+if(IBAN_BUILD_BENCHMARKS)
+    include(FetchContent)
+    # Pinned version, fetched like GoogleTest. SYSTEM: its headers do not
+    # trigger our strict warnings.
+    FetchContent_Declare(googlebenchmark
+            GIT_REPOSITORY https://github.com/google/benchmark.git
+            GIT_TAG v1.10.0
+            GIT_SHALLOW TRUE
+            SYSTEM)
+    # Only the library is needed: no tests, no install rules, and no -Werror
+    # on its own sources.
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+
+    add_executable(iban_benchmark benchmark/CountBenchmark.cpp)
+    # benchmark::benchmark_main is not used: the file defines BENCHMARK_MAIN.
+    target_link_libraries(iban_benchmark PRIVATE iban_core benchmark::benchmark)
+    iban_set_warnings(iban_benchmark)
 endif()

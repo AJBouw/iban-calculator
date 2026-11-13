@@ -1,15 +1,18 @@
 /// @file main.cpp
-/// @brief Entry point: asks for the input values, validates them and reports
-///        what will be run. The operating modes are added in later steps.
+/// @brief Entry point: asks for the input values, validates them and
+///        runs the requested mode. Count mode is implemented; list and search
+///        mode follow.
 // LEARN: main() only wires the layers together: read text, call the parser,
 // LEARN: print the result. All logic lives in iban_core, where it is tested.
 
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string_view>
 
 #include "iban/Version.h"
 #include "iban/application/Mode.h"
+#include "iban/application/ParallelCount.h"
 #include "iban/application/Query.h"
 #include "iban/presentation/ConsoleInput.h"
 #include "iban/presentation/InputParser.h"
@@ -20,7 +23,8 @@ using iban::application::Mode;
 
 // Prefix for error messages, so the source is clear in the output of a script.
 // LEARN: A fixed name instead of argv[0]: argv[0] can be a full path such as
-// LEARN: ./build/debug/iban, which makes the message long and platform dependent.
+// LEARN: ./build/debug/iban, which makes the message long and platform
+// dependent.
 constexpr std::string_view kProgramName = "iban";
 
 // Readable name of a mode for the summary line.
@@ -62,9 +66,23 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    // Temporary output until the operating modes exist: confirms that the input
-    // is valid. It does not yet say which account numbers pass the m-check.
     const auto& query = *result.query;
+    if (query.mode == Mode::Count) {
+        // Count mode: the output is one number, as in the assignment example.
+        try {
+            std::cout << iban::application::countParallel(query) << "\n";
+        } catch (const std::exception& error) {
+            // For example std::system_error when a thread cannot be started.
+            // LEARN: Catching here gives a clear message and exit code 1 instead
+            // LEARN: of std::terminate with an unhandled exception.
+            std::cerr << kProgramName << ": error: " << error.what() << "\n";
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
+    // Temporary output for the modes that are not implemented yet: confirms
+    // that the input is valid.
     std::cout << "input OK: " << modeName(query.mode) << " mode, range [" << query.begin << ", "
               << query.end << "), m = " << query.modulus << ", p = " << query.threadCount;
     if (query.target) {

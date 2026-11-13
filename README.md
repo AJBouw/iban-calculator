@@ -4,9 +4,9 @@
 
 A multithreaded command-line application written in modern C++20. It generalises the Dutch 11-check (11-proef) into an *m-check* and is developed for the Concurrent Programming module.
 
-The application counts, lists, or searches for numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
+The application is designed to count, list or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
 
-> **Project status:** The project setup, the m-check, the input handling, and the fair range split are complete and tested. The program asks for the input, validates it, and reports what it will run. The operating modes and multithreading are under development.
+> **Project status:** Count mode works with `p` threads and is measured. List mode, search mode, and the shared counter are under development.
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check, otherwise print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
+| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed; see open question 2). |
 
 ### Input parameters
 
@@ -129,7 +129,7 @@ pipx install clang-format==21.1.8
 
 **Windows**
 
-Install Visual Studio 2022 with the *Desktop development with C++* workload, CMake and Ninja. Git can be installed from [git-scm.com](https://git-scm.com/).
+Install Visual Studio 2022 with the *Desktop development with C++* workload, CMake, and Ninja. Git can be installed from [git-scm.com](https://git-scm.com/).
 
 ### Build, test and run
 
@@ -168,7 +168,7 @@ Run the application:
 
 ### Individual build steps
 
-The workflow preset combines configuration, compilation and testing. These steps can also be executed separately:
+The workflow preset combines configuration, compilation, and testing. These steps can also be executed separately:
 
 ```bash
 cmake --preset debug
@@ -194,7 +194,7 @@ The assignment examples start with an extra 0: use it only on one line.
   p  number of threads         (1 to 256): 4
   u  mode                      (0 = count, 1 = list, 2 = search): 0
   s  number to search for      (required when u = 2, press Enter to skip):
-input OK: count mode, range [274856170, 274856190), m = 11, p = 4
+2
 ```
 
 An empty answer for a required value repeats the question; an empty answer for `s` skips it.
@@ -228,11 +228,12 @@ Examples from the assignment:
 
 - **Standard output** contains only results. The questions and error messages are written to **standard error**, so the results can be compared or redirected (`iban > out.txt`) without the prompt.
 - Invalid input is reported with the program name and the first invalid field, for example `iban: error: m must be between 1 and 256`, and the program exits with status code 1.
-- Until the operating modes are implemented, the program prints `input OK:` followed by the validated values. This confirms that the input is valid; it does not yet report which account numbers pass the m-check.
+- **Count mode** prints one number: how many values in `[b, e)` pass the m-check.
+- Until list and search mode are implemented, the program prints `input OK:` followed by the validated values for those modes.
 
 ## Project Structure
 
-The project uses a separation between application entry point, reusable implementation code, public interfaces and tests.
+The project uses a separation between application entry point, reusable implementation code, public interfaces, and tests.
 
 Current structure:
 
@@ -252,13 +253,19 @@ iban-calculator/
 │   └── Version.h.in
 ├── app/
 │   └── main.cpp            # Entry point only
+├── benchmark/
+│   └── CountBenchmark.cpp  # Google Benchmark: count mode with 1, 2, 4, ... threads
+├── docs/
+│   └── measurements.md     # Method and results of the measurements
 ├── include/
 │   └── iban/
 │       ├── application/
 │       │   ├── Limits.h        # Input rules from the assignment (b, e, m, p)
+│       │   ├── ParallelCount.h # Count mode with p threads
 │       │   ├── Mode.h          # Operating mode u
 │       │   └── Query.h         # A validated request
 │       ├── domain/
+│       │   ├── Count.h         # Sequential count of a range
 │       │   ├── MCheck.h        # Public interface of the m-check
 │       │   ├── Range.h         # Half-open range [begin, end)
 │       │   └── RangeSplit.h    # Fair split of a range into p parts
@@ -266,7 +273,10 @@ iban-calculator/
 │           ├── ConsoleInput.h  # Asks for the input values
 │           └── InputParser.h   # Turns text into a validated Query
 ├── src/
+│   ├── application/
+│   │   └── ParallelCount.cpp
 │   ├── domain/
+│   │   ├── Count.cpp
 │   │   ├── MCheck.cpp          # Reference implementation of the m-check
 │   │   └── RangeSplit.cpp
 │   └── presentation/
@@ -278,11 +288,13 @@ iban-calculator/
 │       ├── MCheckTest.cpp
 │       ├── InputParserTest.cpp
 │       ├── ConsoleInputTest.cpp
-│       └── RangeSplitTest.cpp
+│       ├── RangeSplitTest.cpp
+│       ├── CountTest.cpp
+│       └── ParallelCountTest.cpp
 └── build/                  # Generated; not committed
 ```
 
-Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artefacts are kept outside the source directories.
+Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artifacts are kept outside the source directories.
 
 ## Architecture and Design
 
@@ -291,7 +303,7 @@ The intended design separates the application into responsibilities:
 - **Domain:** m-check validation and range-splitting algorithms.
 - **Application:** count, list and search use cases, coordinating the required operations.
 - **Infrastructure:** thread management, synchronisation and other technical implementations.
-- **Presentation:** input parsing, parameter validation and console output.
+- **Presentation:** input parsing, parameter validation, and console output.
 
 The design aims to keep domain logic independent of threading and console input/output. This makes the algorithms easier to test in isolation and allows different concurrency strategies to be evaluated without changing the underlying validation rules.
 
@@ -317,7 +329,24 @@ All logic except `main()` lives in the static library `iban_core`. Both the prog
 - **Half-open ranges** (`Range{begin, end}`) make adjacent parts share a boundary without overlap, matching `[b, e)` in the assignment.
 - **Contiguous blocks instead of interleaving** (`x, x + p, x + 2p, …`): each thread works on consecutive numbers, which an incremental m-check can reuse and which keeps memory access local.
 - **Always exactly `p` parts.** When `p > n`, the last parts are empty; each thread still gets a part, as the assignment requires `p` threads.
-- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the size of the range.
+- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the range size.
+
+### Parallel count
+
+`countParallel` splits `[b, e)` into `p` parts and starts one thread per part. Each thread calls `countValid` (the sequential count from the domain layer) on its own part and writes the result to its own slot in a vector; the slots are added after all threads have been joined.
+
+```text
+splitRange([b, e), p)  →  part 0   part 1   …   part p−1
+                            │        │             │
+                         thread 0 thread 1  …  thread p−1
+                            │        │             │
+counts                 [   c0   |   c1    | … |  cp−1   ]  →  sum after join
+```
+
+- **No shared data while the threads run**: thread `i` only writes `counts[i]`, a separate memory location, so no lock is needed. After `join`, every write of a thread is visible to the caller.
+- **`std::thread` with explicit joins**, as in the lectures. If starting a thread fails, the threads already running are joined before the error is passed on; otherwise, `std::thread`'s destructor would call `std::terminate`. C++20 `std::jthread` would do this automatically (it joins in its destructor) and also offers a `std::stop_token`; the code explains this in comments.
+- **Exactly `p` threads**: a thread with an empty part finishes immediately.
+- The assignment asks for a **shared counter** in count mode; that version is added separately, so its cost can be measured against this one (see `docs/measurements.md`).
 
 ### Input handling
 
@@ -329,9 +358,9 @@ Input passes through two layers before any calculation starts:
 Design choices:
 
 - **Invalid input is returned, not thrown.** A typing error by the user is expected behaviour, unlike an invalid argument inside the program (see the m-check). The parser returns a `ParseResult` with either a valid `Query` or a message; `std::expected` would express this directly but requires C++23.
-- **One source for every input rule.** `application/Limits.h` holds all bounds from the assignment. The parser, the help text, the error messages, the `Query` defaults and the tests are built from these constants, so they cannot disagree.
+- **One source for every input rule.** `application/Limits.h` holds all bounds from the assignment. The parser, the help text, the error messages, the `Query` defaults, and the tests are built from these constants, so they cannot disagree.
 - **A `Query` is always valid.** Only the parser creates one, so the rest of the program does not repeat the checks. `s` is a `std::optional`, because any number, including `-1` or `0`, could be real input.
-- **`Mode` is an `enum class`**, so a mode cannot be mixed up with an integer and the compiler warns when a `switch` misses a mode.
+- **`Mode` is an `enum class`**, so a mode cannot be mixed up with an integer, and the compiler warns when a `switch` misses a mode.
 
 The version number is defined once, in `project()` in `CMakeLists.txt`; CMake generates a header from `cmake/Version.h.in`, so the code never repeats it.
 
@@ -360,8 +389,10 @@ ctest --preset debug -L unit
 | `Setup` | The compiler uses C++20 and threads can be started. |
 | `WeightedDigitSumTest` | Hand-calculated sums, including 0, 2³¹ − 1 and the largest 10-digit sum. |
 | `PassesMCheck` | The assignment example, error detection with `m = 11`, and rejection of invalid arguments. |
-| `InputParser` | The assignment examples, the three input forms, the boundary values and one test per validation rule. |
-| `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions and end of input. |
+| `InputParser` | The assignment examples, the three input forms, the boundary values, and one test per validation rule. |
+| `ConsoleInput` | One value per question, a pasted complete line, skipping `s`, repeated questions, and end of input. |
+| `CountValid` | The assignment examples (2 and 6), an empty range, `m = 1` and an invalid modulus. |
+| `ParallelCount` | The parallel count equals the sequential count for `p` = 1 … 16 and several moduli, also with more threads than numbers and with 256 threads. |
 | `RangeSplit` | The assignment example, the remainder distribution, more parts than values, and the three requirements (no gaps, no overlap, sizes differ by at most one) for thousands of combinations, including the largest range. |
 
 ### Planned test levels
@@ -384,9 +415,17 @@ Additional validation will focus on:
 - Early termination in search mode.
 - Consistent output and sequence numbering.
 
-Performance measurements are taken with Release builds only; Debug builds are not optimised and would not give representative results.
+Performance measurements are taken with Release builds only; Debug builds are not optimised and would not give representative results. The benchmark and its results are described in [`docs/measurements.md`](docs/measurements.md):
 
-Sanitizers and additional static-analysis tools will be added during the quality and verification stage.
+```bash
+cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
+cmake --build --preset release
+./build/release/iban_benchmark --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
+```
+
+The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results, and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
+
+Sanitizers and additional static-analysis tools will be added as part of the quality and verification stage.
 
 ## Development Workflow
 
@@ -409,8 +448,27 @@ Every push and pull request to `main` or `develop` runs `.github/workflows/conti
 | `build-and-test (macos-latest)` | Build and test with Apple Clang |
 | `build-and-test (windows-latest)` | Build and test with MSVC |
 | `format-check` | Verify formatting against `.clang-format` |
+| `benchmark (smoke run)` | Build the benchmark and run each thread count once; results on the run's Summary page, not used as measurements |
 
-A pull request is merged only when all four checks pass. Dependabot keeps the GitHub Actions versions up to date.
+A pull request is merged only when all checks pass. Dependabot keeps the GitHub Actions versions up to date.
+
+### Build system: why CMake
+
+The assignment does not prescribe a build system; a single command such as `g++ -std=c++20 -pthread …` (as in the lectures) would compile the program. CMake is used because the project needs more than one compiler call:
+
+| Need | How CMake provides it |
+|---|---|
+| Build on macOS, Linux and Windows (Clang, GCC, MSVC) | One description generates the native build for each compiler; CI uses it on all three platforms. |
+| Portable thread support | `Threads::Threads` adds `-pthread` where a platform needs it, instead of a compiler-specific flag. |
+| Debug for development, Release for measurements | Presets (`debug`, `release`) give two separate builds; measurements are only valid in Release. |
+| Unit tests in the same build | GoogleTest is fetched at a pinned version, and every test is registered with CTest. |
+| Optional benchmark | Google Benchmark is fetched only when `IBAN_BUILD_BENCHMARKS` is on. |
+| One library for program and tests | `iban_core` is compiled once and linked by both, so the tests check the shipped code. |
+| Formatting check | `format` and `format-check` targets use the pinned clang-format version. |
+| Version number in one place | `project(VERSION …)` generates `Version.h`. |
+| IDE support | CLion and Visual Studio open the project directly from `CMakeLists.txt`. |
+
+Trade-off: CMake is an extra language to learn and maintain. Alternatives were considered: a Makefile does not work with MSVC without extra tools, Meson and Bazel are less common in C++ courses, and IDE project files tie the project to one IDE. CMake is the de facto standard for C++ projects.
 
 ### Commits
 
@@ -458,7 +516,7 @@ Comments should explain design decisions, invariants, complexity, and relevant r
 
 ## Status and Roadmap
 
-Each step adds one concern, measured against the previous step where relevant, so you can explain the effect of every change.
+Each step adds one concern, measured against the previous step where relevant, so the effect of every change can be explained.
 
 | Step | Component | Status |
 |---:|---|:---:|
@@ -466,7 +524,8 @@ Each step adds one concern, measured against the previous step where relevant, s
 | 1 | m-check: reference implementation in the core library | ✅ |
 | 2 | Input: asking per field, parsing and validation | ✅ |
 | 3 | Fair range splitting | ✅ |
-| 4 | Sequential baseline compared with `p` threads | ⬜ |
+| 4 | Count mode: sequential baseline compared with `p` threads, benchmark | ✅ |
+| 4b | End-to-end tests of the assignment examples in Gherkin | ⬜ |
 | 5 | Shared counter: data race, mutex, local counting | ⬜ |
 | 6 | List mode | ⬜ |
 | 7 | Search mode with atomic stop flag and early termination | ⬜ |
@@ -485,10 +544,10 @@ The following points still need to be clarified against the original assignment 
    - **B:** `s` is not used; the program searches for any valid number in the range.
    - **C:** `s` is a starting point for the search.
 
-   In every interpretation, one thread must stop the others promptly, which is the concurrency requirement this mode tests.
+   In every interpretation one thread must stop the others promptly, which is the concurrency requirement this mode tests.
 
 3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, `passesMCheck(0, m)` returns `true`. Whether zero should be counted as a valid account number will be checked against the assignment requirements.
 
-4. **Thread pool and synchronisation:** The exact implementation strategy will be determined during development and evaluated against correctness, performance and the concurrency assessment criteria.
+4. **Thread pool and synchronisation:** The exact implementation strategy will be determined during development and evaluated against correctness, performance, and the concurrency assessment criteria.
 
-These assumptions will be updated when the assignment interpretation has been confirmed.
+These assumptions will be updated once the assignment interpretation is confirmed.
