@@ -234,4 +234,11 @@ if(IBAN_BUILD_BENCHMARKS)
     # benchmark::benchmark_main is not used: the file defines BENCHMARK_MAIN.
     target_link_libraries(iban_benchmark PRIVATE iban_core benchmark::benchmark)
     iban_set_warnings(iban_benchmark)
+
+    # Compares the ways of combining the thread counts (shared counter, locks,
+    # atomic, result slots). A separate program, so the speedup measurement and
+    # its CI summary stay unchanged.
+    add_executable(iban_benchmark_variants benchmark/CountVariantsBenchmark.cpp)
+    target_link_libraries(iban_benchmark_variants PRIVATE iban_core benchmark::benchmark)
+    iban_set_warnings(iban_benchmark_variants)
 endif()
