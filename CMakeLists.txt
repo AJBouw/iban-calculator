@@ -55,6 +55,7 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 # the tests, so the tests exercise exactly the code that ships.
 # LEARN: STATIC: the code is copied into each program that links it (a .a file).
 add_library(iban_core STATIC
+        src/application/CountVariants.cpp
         src/application/ParallelCount.cpp
         src/domain/Count.cpp
         src/domain/MCheck.cpp
@@ -169,6 +170,8 @@ if(IBAN_BUILD_TESTS)
             tests/unit/RangeSplitTest.cpp
             tests/unit/CountTest.cpp
             tests/unit/ParallelCountTest.cpp
+            tests/unit/SharedCounterTest.cpp
+            tests/unit/CountVariantsTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
@@ -176,6 +179,13 @@ if(IBAN_BUILD_TESTS)
 
     # Register individual GoogleTest cases with CTest.
     gtest_discover_tests(iban_unit_tests PROPERTIES LABELS unit)
+
+    # Demonstration of the data race of a shared counter without a lock. A
+    # program, not a test: a race is not reproducible, so it cannot pass or fail
+    # reliably. Run it in the debug or tsan build (see tests/race/RaceDemo.cpp).
+    add_executable(iban_race_demo tests/race/RaceDemo.cpp)
+    target_link_libraries(iban_race_demo PRIVATE iban_core)
+    iban_set_warnings(iban_race_demo)
 endif()
 
 # ---------------------------------------------------------------------------
