@@ -80,6 +80,17 @@ public class IbanSteps {
         assertEquals(expected, normalise(output).strip(), "standard output");
     }
 
+    /**
+     * Count mode prints only the number of valid account numbers in [b, e).
+     * Same check as "the output is", worded in the language of the assignment.
+     */
+    // LEARN: (s) in a Cucumber expression is optional text: "1 valid account number" also matches.
+    @Then("the program counts {int} valid account number(s)")
+    public void theProgramCounts(int expected) {
+        assertEquals(String.valueOf(expected), normalise(output).strip(),
+                "number of valid account numbers on standard output");
+    }
+
     @Then("the output is:")
     public void theOutputIsBlock(String expected) {
         assertEquals(normalise(expected).strip(), normalise(output).strip(), "standard output");
