@@ -4,7 +4,7 @@
 
 A multithreaded command-line application written in modern C++20. It generalises the Dutch 11-check (11-proef) into an *m-check* and is developed for the Concurrent Programming module.
 
-The application is designed to count, list or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
+The application is designed to count, list, or search numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety, and measurable concurrency performance.
 
 > **Project status:** Count mode works with `p` threads and is measured. List mode, search mode, and the shared counter are under development.
 
@@ -56,7 +56,7 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed; see open question 2). |
+| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check, otherwise print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
 
 ### Input parameters
 
@@ -100,8 +100,10 @@ The list mode does not guarantee that numbers are printed in numerical order. Ho
 | Ninja | Any supported version | Build tool used by the presets |
 | Git | Any supported version | Version control |
 | clang-format | 21.1.8 (exact) | Formatting checks (optional for building) |
+| Java (JDK) | 25 | End-to-end tests only (optional) |
+| Maven | 3.9 or later | End-to-end tests only (optional) |
 
-GoogleTest 1.15.2 is downloaded automatically by CMake during the first configuration when tests are enabled.
+GoogleTest 1.15.2 is downloaded automatically by CMake during the first configuration when tests are enabled. Maven downloads Cucumber and JUnit during the first run of the end-to-end tests.
 
 Suggested compiler versions:
 
@@ -117,6 +119,7 @@ Suggested compiler versions:
 xcode-select --install
 brew install cmake ninja pipx
 pipx install clang-format==21.1.8
+brew install openjdk@25 maven   # only for the end-to-end tests
 ```
 
 **Linux (Debian/Ubuntu)**
@@ -125,11 +128,12 @@ pipx install clang-format==21.1.8
 sudo apt update
 sudo apt install build-essential cmake ninja-build git pipx
 pipx install clang-format==21.1.8
+sudo apt install openjdk-25-jdk maven   # only for the end-to-end tests
 ```
 
 **Windows**
 
-Install Visual Studio 2022 with the *Desktop development with C++* workload, CMake, and Ninja. Git can be installed from [git-scm.com](https://git-scm.com/).
+Install Visual Studio 2022 with the *Desktop development with C++* workload, CMake, and Ninja. Git can be installed from [git-scm.com](https://git-scm.com/). For the end-to-end tests, install JDK 25 (for example, [Eclipse Temurin](https://adoptium.net/)) and [Maven](https://maven.apache.org/download.cgi).
 
 ### Build, test and run
 
@@ -283,6 +287,15 @@ iban-calculator/
 │       ├── ConsoleInput.cpp
 │       └── InputParser.cpp
 ├── tests/
+│   ├── e2e/                # End-to-end tests with Cucumber (Java, Maven)
+│   │   ├── pom.xml
+│   │   └── src/test/
+│   │       ├── java/nl/iban/e2e/
+│   │       │   ├── IbanSteps.java        # Step definitions: start the program, check output
+│   │       │   └── RunCucumberTest.java  # Runs the scenarios on the JUnit Platform
+│   │       └── resources/
+│   │           ├── features/             # Scenarios in Gherkin (*.feature)
+│   │           └── junit-platform.properties
 │   └── unit/
 │       ├── SetupTest.cpp
 │       ├── MCheckTest.cpp
@@ -303,7 +316,7 @@ The intended design separates the application into responsibilities:
 - **Domain:** m-check validation and range-splitting algorithms.
 - **Application:** count, list and search use cases, coordinating the required operations.
 - **Infrastructure:** thread management, synchronisation and other technical implementations.
-- **Presentation:** input parsing, parameter validation, and console output.
+- **Presentation:** input parsing, parameter validation and console output.
 
 The design aims to keep domain logic independent of threading and console input/output. This makes the algorithms easier to test in isolation and allows different concurrency strategies to be evaluated without changing the underlying validation rules.
 
@@ -329,7 +342,7 @@ All logic except `main()` lives in the static library `iban_core`. Both the prog
 - **Half-open ranges** (`Range{begin, end}`) make adjacent parts share a boundary without overlap, matching `[b, e)` in the assignment.
 - **Contiguous blocks instead of interleaving** (`x, x + p, x + 2p, …`): each thread works on consecutive numbers, which an incremental m-check can reuse and which keeps memory access local.
 - **Always exactly `p` parts.** When `p > n`, the last parts are empty; each thread still gets a part, as the assignment requires `p` threads.
-- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the range size.
+- **Domain layer:** the split is pure arithmetic and does not know about threads. Its cost is O(p), independent of the size of the range.
 
 ### Parallel count
 
@@ -368,7 +381,7 @@ The final architecture and its dependency directions will be documented as the i
 
 ## Testing
 
-The project uses GoogleTest for automated testing.
+The project uses GoogleTest for the unit tests and Cucumber for the end-to-end tests.
 
 Run all tests:
 
@@ -401,7 +414,36 @@ ctest --preset debug -L unit
 |---|---|
 | Unit | Individual components, such as m-check validation, range splitting, synchronisation and input parsing. |
 | Integration | Complete use cases using the actual thread-management implementation. Results are compared with a simple reference implementation. |
-| End-to-end | The compiled application is executed as a separate process and tested against the assignment examples. |
+| End-to-end | The compiled application is executed as a separate process and tested against the assignment examples (in place, see below). |
+
+### End-to-end tests
+
+The end-to-end tests describe the behaviour that a user sees, in [Gherkin](https://cucumber.io/docs/gherkin/reference/): given some input, the program prints this output and ends with this exit code. [Cucumber](https://cucumber.io/docs/cucumber/) (Java) starts the compiled program as a separate process for every scenario, writes the input to its standard input and checks its standard output, standard error, and exit code. The tests therefore know nothing about the C++ code; they test the program exactly as it is delivered.
+
+They need Java 25 and Maven, so they are off by default:
+
+```bash
+cmake --preset debug -DIBAN_BUILD_E2E_TESTS=ON
+cmake --build --preset debug
+ctest --preset debug -L e2e --output-on-failure
+```
+
+CTest starts Maven with the path to the built program. The first run downloads Cucumber and JUnit. Use `-V` to see every step, and open `tests/e2e/target/cucumber-report.html` for the report.
+
+Scenarios are written in `tests/e2e/src/test/resources/features/`. These steps are available:
+
+| Step | Meaning |
+|---|---|
+| `Given the input "…"` | One line of input, for example all values on one line |
+| `Given the input lines:` (with a `"""` block) | Several lines of input, one answer per question |
+| `Given no input` | Standard input is closed immediately |
+| `When the program runs` | Starts the program (time limit 30 seconds) |
+| `Then the output is "…"` | Standard output equals this single line |
+| `Then the output is:` (with a `"""` block) | Standard output equals these lines |
+| `Then the output is empty` | Nothing on standard output |
+| `Then the program succeeds` | Exit code 0 |
+| `Then the program fails` | Exit code other than 0 |
+| `Then the error message contains "…"` | Standard error contains this text |
 
 ### Concurrency testing
 
@@ -423,7 +465,7 @@ cmake --build --preset release
 ./build/release/iban_benchmark --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
 ```
 
-The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results, and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
+The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.10.0, fetched by CMake like GoogleTest). It is off by default, so normal builds and CI do not download it. The method, the results and the sources used are in [`docs/measurements.md`](docs/measurements.md#references).
 
 Sanitizers and additional static-analysis tools will be added as part of the quality and verification stage.
 
@@ -449,8 +491,9 @@ Every push and pull request to `main` or `develop` runs `.github/workflows/conti
 | `build-and-test (windows-latest)` | Build and test with MSVC |
 | `format-check` | Verify formatting against `.clang-format` |
 | `benchmark (smoke run)` | Build the benchmark and run each thread count once; results on the run's Summary page, not used as measurements |
+| `end-to-end tests (Cucumber)` | Run the Cucumber scenarios against a Release build on Linux; the HTML report is kept as the artifact `cucumber-report` |
 
-A pull request is merged only when all checks pass. Dependabot keeps the GitHub Actions versions up to date.
+A pull request is merged only when all checks pass. Dependabot keeps the GitHub Actions versions and the Maven dependencies of the end-to-end tests up to date.
 
 ### Build system: why CMake
 
@@ -525,13 +568,15 @@ Each step adds one concern, measured against the previous step where relevant, s
 | 2 | Input: asking per field, parsing and validation | ✅ |
 | 3 | Fair range splitting | ✅ |
 | 4 | Count mode: sequential baseline compared with `p` threads, benchmark | ✅ |
-| 4b | End-to-end tests of the assignment examples in Gherkin | ⬜ |
+| 4b | End-to-end tests of the assignment examples in Gherkin (Cucumber, Java) | 🔄 |
 | 5 | Shared counter: data race, mutex, local counting | ⬜ |
 | 6 | List mode | ⬜ |
 | 7 | Search mode with atomic stop flag and early termination | ⬜ |
 | 8 | Performance comparison, including an incremental m-check walker | ⬜ |
 | 9 | Thread pool | ⬜ |
 | 10 | Quality checks (sanitizers, static analysis, Doxygen) and release 1.0.0 | ⬜ |
+
+✅ done · 🔄 in progress · ⬜ planned
 
 ## Assumptions and Open Questions
 
