@@ -1,0 +1,8 @@
+//
+// Created by Angela Jane Bouw on 13/11/2026.
+//
+
+#ifndef IBANCALCULATOR_RANGESPLIT_H
+#define IBANCALCULATOR_RANGESPLIT_H
+
+#endif //IBANCALCULATOR_RANGESPLIT_H
