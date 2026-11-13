@@ -64,10 +64,10 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, [0, 10^8), m = 11"
-x-axis "threads" [1, 2, 4, 8, 16, 32]
-y-axis "speedup" 0 --> 10
-line [1.00, 1.97, 3.78, 6.56, 6.38, 6.40]
-line [1, 2, 4, 8, 10, 10]
+    x-axis "threads" [1, 2, 4, 8, 16, 32]
+    y-axis "speedup" 0 --> 10
+    line [1.00, 1.97, 3.78, 6.56, 6.38, 6.40]
+    line [1, 2, 4, 8, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
@@ -104,22 +104,134 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, M1 Pro (8 P + 2 E cores)"
-x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
-y-axis "speedup" 0 --> 10
-line [1.00, 2.04, 3.01, 4.05, 5.02, 6.02, 6.91, 7.77, 7.09, 7.24, 6.96, 6.79, 7.45, 7.34]
-line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
+    x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
+    y-axis "speedup" 0 --> 10
+    line [1.00, 2.04, 3.01, 4.05, 5.02, 6.02, 6.91, 7.77, 7.09, 7.24, 6.96, 6.79, 7.45, 7.34]
+    line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
+```
+
+**Legend:** blue line = measured speedup; orange line = ideal speedup.
+
+### Third measurement (2026-11-13, other programs closed)
+
+Measured with all other programs closed (load average about 4.6). The raw results are in [`data/step4-count.json`](data/step4-count.json); the figure below is drawn from that file.
+
+| Threads | Median (ms) | cv | Speedup | Efficiency |
+|---:|---:|---:|---:|---:|
+| 1 | 578 | 0.3% | 1.00 | 100% |
+| 2 | 292 | 2.4% | 1.98 | 99% |
+| 3 | 199 | 0.2% | 2.90 | 97% |
+| 4 | 150 | 0.3% | 3.85 | 96% |
+| 5 | 120 | 0.1% | 4.82 | 96% |
+| 6 | 101 | 1.6% | 5.72 | 95% |
+| 7 | 86.7 | 0.5% | 6.67 | 95% |
+| 8 | 77.0 | 1.5% | 7.51 | 94% |
+| 9 | 82.2 | 2.0% | 7.03 | 78% |
+| 10 | 83.0 | 5.3% | 6.96 | 70% |
+| 11 | 84.7 | 4.1% | 6.82 | 62% |
+| 12 | 80.6 | 3.8% | 7.17 | 60% |
+| 16 | 80.8 | 1.6% | 7.15 | 45% |
+| 32 | **74.8** | 1.4% | **7.73** | 24% |
+
+```mermaid
+---
+config:
+  themeVariables:
+    xyChart:
+      plotColorPalette: "#2563eb, #f59e0b"
+---
+xychart-beta
+    title "Speedup, count mode, M1 Pro, other programs closed"
+    x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
+    y-axis "speedup" 0 --> 10
+    line [1.00, 1.98, 2.90, 3.85, 4.82, 5.72, 6.67, 7.51, 7.03, 6.96, 6.82, 7.17, 7.15, 7.73]
+    line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
 
 ### Observations
 
-- **Linear speedup up to 8 threads.** Up to the 8 performance cores, the efficiency stays near 100%: the threads share nothing while they run, so they do not wait for each other. Values just above 100% are within the measurement spread (cv up to 5%).
-- **8 threads is the fastest (78 ms, 7.8×), not 10.** With 9 or 10 threads the program becomes *slower*, although there are 10 cores.
+- **Linear speedup up to 8 threads.** Up to the 8 performance cores the efficiency stays near 100%: the threads share nothing while they run, so they do not wait for each other. Values just above 100% are within the measurement spread (cv up to 5%).
+- **Of 1 to 12 threads, 8 is the fastest, not 10.** With 9 or 10 threads the program becomes *slower*, although there are 10 cores. This holds in all three measurements.
 - **Cause: equal parts on unequal cores.** The range is split into equal parts, as the assignment requires. With 9 or more threads, some parts run on the 2 efficiency cores, which are considerably slower. The count is finished only when the slowest thread is finished, so these parts determine the total time.
-- **16 and 32 threads are faster than 9 to 12.** With more threads than cores, the parts are smaller, and the operating system moves threads between cores; a thread that lands on an efficiency core holds up less work. Still no gain over 8 threads, because there are no more fast cores.
-- **Conclusion:** a fair static split is optimal for identical cores. On a processor with performance and efficiency cores, the best thread count here is the number of performance cores. Dynamic work distribution (many small tasks taken by whichever thread is free) would balance unequal cores; this is investigated with the thread pool.
-- **First measurement:** with more background load (load average about 12) the speedup at 8 threads was 6.6×; with less load it is 7.8×. Background load clearly affects the results, so conditions are recorded with every measurement.
+- **16 and 32 threads are faster than 9 to 12.** With more threads than cores the parts are smaller, and the operating system moves threads between cores; a thread that lands on an efficiency core holds up only a small piece of work. In the third measurement 32 threads were even slightly faster than 8 (74.8 against 77.0 ms, 3%). More, smaller parts thus act as a simple form of dynamic distribution, but the gain is small because there are no more fast cores.
+- **Conclusion:** a fair static split is optimal for identical cores. On a processor with performance and efficiency cores, the best choice here is the number of performance cores, or many more threads than cores. Dynamic work distribution (many small tasks taken by whichever thread is free) balances unequal cores on purpose; this is investigated with the thread pool.
+- **Effect of background load.** At 8 threads the time was 88.2 ms with a load average of about 12 (first measurement), 78.2 ms at about 6 (second) and 77.0 ms at about 4.6 (third). Background load clearly slows the program down, so the conditions are recorded with every measurement. Closing programs also made the runs more stable: in the third measurement the spread up to 8 threads is at most 2.4%.
+- **Compare times, not only speedups.** The speedup at 8 threads is lower in the third measurement (7.5×) than in the second (7.8×), although 8 threads were just as fast (77.0 against 78.2 ms). The difference comes from the run with 1 thread (578 against 608 ms), which is the base of every speedup: a slow base makes every speedup look better.
+
+## Step 5: shared counter
+
+The assignment asks count mode to keep the result in a shared counter. This step measures what that costs, and which way of using the counter is cheapest. The reasons for the final choice are in [decision 0010](decisions/0010-shared-counter-and-lock.md).
+
+### What is compared
+
+Every variant splits the range the same way and gives the same count (checked by `CountVariantsTest`); they differ only in how the threads combine their results.
+
+| Variant | Shared while the threads run | Synchronisations |
+|---|---|---|
+| `result_slots` | nothing: one slot per thread, added after join (step 4, the baseline) | none |
+| `mutex_per_thread` | a counter with `std::mutex`, one locked add per thread (**the program**) | p |
+| `spin_lock_per_thread` | the same with `SpinLock` | p |
+| `atomic_per_hit` | a `std::atomic` counter, `fetch_add` per valid number | one per valid number |
+| `mutex_per_hit` | a counter with `std::mutex`, locked per valid number | one per valid number |
+| `spin_lock_per_hit` | the same with `SpinLock` | one per valid number |
+
+Each variant runs with p = 1, 2, 4, 8 and 16 and with two moduli: **m = 11** (about 9% of the numbers are valid) and **m = 1** (every number is valid, so the variants "per hit" synchronise for every number: the worst case). The range is `[0, 10⁷)`, smaller than in step 4, because a lock per number with m = 1 makes the slow variants take seconds.
+
+### Commands
+
+```bash
+cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
+cmake --build --preset release
+./build/release/iban_benchmark_variants --benchmark_repetitions=5 --benchmark_report_aggregates_only=true \
+    --benchmark_out=docs/data/step5-variants.json --benchmark_out_format=json
+```
+
+As in step 4: other programs closed, load average below about 2 (`uptime`), median of 5 repetitions.
+
+### Expected outcome
+
+- `mutex_per_thread` and `spin_lock_per_thread` as fast as `result_slots`: p synchronisations disappear next to millions of m-checks.
+- The variants per hit slower with more threads, and much slower with m = 1, because all threads wait for the same lock or the same cache line (contention).
+- `SpinLock` faster than `std::mutex` per hit while p is at most the number of cores, and worse beyond that, when a waiting thread spins on a core the lock holder needs.
+
+### Results (2026-11-13, other programs closed)
+
+Measured on the M1 Pro (see *Machine*) with load average about 4, median of 5 repetitions, times in milliseconds for the range `[0, 10⁷)`. The raw results are in [`data/step5-variants.json`](data/step5-variants.json).
+
+**m = 11** (about 9% of the numbers are valid):
+
+| Variant | p = 1 | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---:|---:|---:|---:|---:|
+| `result_slots` | 60.1 | 32.1 | 16.7 | 8.52 | 8.12 |
+| **`mutex_per_thread`** (the program) | **59.6** | **30.3** | **15.2** | **8.01** | **7.78** |
+| `spin_lock_per_thread` | 59.6 | 30.3 | 15.2 | 7.74 | 7.83 |
+| `atomic_per_hit` | 83.2 | 49.1 | 39.8 | 64.1 | 90.0 |
+| `mutex_per_hit` | 75.1 | 80.6 | 137 | 178 | 155 |
+| `spin_lock_per_hit` | 72.9 | 54.9 | 70.2 | 193 | 104 |
+
+**m = 1** (every number is valid, so the variants per hit synchronise for every number):
+
+| Variant | p = 1 | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---:|---:|---:|---:|---:|
+| `result_slots` | 59.6 | 30.3 | 15.2 | 7.87 | 7.83 |
+| **`mutex_per_thread`** (the program) | **59.6** | **30.3** | **15.2** | **7.80** | **7.80** |
+| `spin_lock_per_thread` | 59.6 | 30.3 | 15.2 | 7.77 | 7.94 |
+| `atomic_per_hit` | 59.2 | 417 | 189 | 361 | 806 |
+| `mutex_per_hit` | 112 | 202 | 282 | 255 | 244 |
+| `spin_lock_per_hit` | 64.1 | 119 | 216 | 498 | 170 |
+
+The spread was at most 1% for the variants per thread with p ≤ 4 and up to 9% at p = 8 and 16; `spin_lock_per_hit` with p = 8 and m = 1 was very unstable (cv 38%).
+
+### Observations
+
+- **A shared counter that is locked once per thread costs nothing measurable.** `mutex_per_thread` is as fast as the result slots of step 4 for every p and both moduli: 7.4× faster with 8 threads than with 1. p locked additions disappear next to ten million m-checks. The assignment's shared counter therefore needs no compromise in speed.
+- **A lock per valid number makes more threads slower than one thread.** With m = 1, `mutex_per_hit` takes 112 ms with one thread and 244 ms with 16; the program needs 7.8 ms. All threads wait for the same lock, so the work is effectively done one number at a time, with the cost of handing the lock over on top (contention).
+- **Lock-free is not contention-free.** `atomic_per_hit` costs nothing with one thread (59.2 ms, as fast as the program), because an uncontended atomic increment is cheap. With more threads every increment moves the counter's cache line to another core: with m = 1 and 16 threads it takes 806 ms, about 100× slower than the program and even slower than the mutex. A waiting mutex lets the other threads sleep, so the line moves less often.
+- **The cost of one uncontended lock.** With one thread and m = 1 there are ten million lock/unlock pairs and no waiting: `mutex_per_hit` adds about 52 ms (about 5 ns per pair), `spin_lock_per_hit` about 4.5 ms (about 0.5 ns per pair). Without contention a spin lock is cheaper than a mutex.
+- **The spin lock is fast for few threads and unpredictable for many.** With 2 threads it beats the mutex (55 against 81 ms with m = 11), but with 8 threads it is the slowest variant with m = 11 and very unstable with m = 1, although 8 threads fit on the 8 performance cores. The threads waiting in the loop compete for the same cache line as the holder. The expected advantage of the spin lock up to the number of cores is therefore *not* confirmed.
+- **Conclusion:** the decision in [0010](decisions/0010-shared-counter-and-lock.md) is confirmed. How often the threads synchronise matters far more than which lock they use: once per thread, every lock is fast; once per number, every lock (and the atomic) is slow.
 
 ## Figures for the report
 
@@ -136,7 +248,7 @@ The Mermaid charts above are rendered by GitHub, but Mermaid cannot draw markers
     --title "Speedup of the count mode, M1 Pro (8 P + 2 E cores)"
 ```
 
-![Speedup and efficiency of the count mode](figures/step4-speedup.svg)
+![Speedup and efficiency of the count mode, third measurement](figures/step4-speedup.svg)
 
 The JSON file is committed with the figure, so the figure can always be redrawn from the measured data.
 
