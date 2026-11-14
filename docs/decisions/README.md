@@ -23,11 +23,12 @@ those steps.
 | [0009](0009-end-to-end-tests.md) | End-to-end tests: Cucumber in Java | Accepted |
 | [0010](0010-shared-counter-and-lock.md) | Shared counter: local count, one locked add per thread, lock as a template parameter | Accepted |
 | [0011](0011-continuous-integration-and-updates.md) | Continuous integration and dependency updates | Accepted |
+| [0012](0012-list-mode-output.md) | List mode: sequence number and line under one lock | Accepted |
 
-Decisions still to be recorded when they are taken: the output of list mode
-(sequence numbers under one lock), the meaning of `s` and how the other threads
-stop in search mode, the incremental m-check, the thread pool (fixed ranges
-versus a shared task queue), and the release (removing the LEARN lines).
+Decisions still to be recorded when they are taken: the meaning of `s` and how
+the other threads stop in search mode, the incremental m-check, the thread pool
+(fixed ranges versus a shared task queue), and the release (removing the LEARN
+lines).
 
 Template for a new record:
 
