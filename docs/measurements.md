@@ -64,10 +64,10 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, [0, 10^8), m = 11"
-    x-axis "threads" [1, 2, 4, 8, 16, 32]
-    y-axis "speedup" 0 --> 10
-    line [1.00, 1.97, 3.78, 6.56, 6.38, 6.40]
-    line [1, 2, 4, 8, 10, 10]
+x-axis "threads" [1, 2, 4, 8, 16, 32]
+y-axis "speedup" 0 --> 10
+line [1.00, 1.97, 3.78, 6.56, 6.38, 6.40]
+line [1, 2, 4, 8, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
@@ -104,10 +104,10 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, M1 Pro (8 P + 2 E cores)"
-    x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
-    y-axis "speedup" 0 --> 10
-    line [1.00, 2.04, 3.01, 4.05, 5.02, 6.02, 6.91, 7.77, 7.09, 7.24, 6.96, 6.79, 7.45, 7.34]
-    line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
+x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
+y-axis "speedup" 0 --> 10
+line [1.00, 2.04, 3.01, 4.05, 5.02, 6.02, 6.91, 7.77, 7.09, 7.24, 6.96, 6.79, 7.45, 7.34]
+line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
@@ -142,10 +142,10 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, M1 Pro, other programs closed"
-    x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
-    y-axis "speedup" 0 --> 10
-    line [1.00, 1.98, 2.90, 3.85, 4.82, 5.72, 6.67, 7.51, 7.03, 6.96, 6.82, 7.17, 7.15, 7.73]
-    line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
+x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
+y-axis "speedup" 0 --> 10
+line [1.00, 1.98, 2.90, 3.85, 4.82, 5.72, 6.67, 7.51, 7.03, 6.96, 6.82, 7.17, 7.15, 7.73]
+line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
@@ -232,6 +232,40 @@ The spread was at most 1% for the variants per thread with p ≤ 4 and up to 9% 
 - **The cost of one uncontended lock.** With one thread and m = 1 there are ten million lock/unlock pairs and no waiting: `mutex_per_hit` adds about 52 ms (about 5 ns per pair), `spin_lock_per_hit` about 4.5 ms (about 0.5 ns per pair). Without contention a spin lock is cheaper than a mutex.
 - **The spin lock is fast for few threads and unpredictable for many.** With 2 threads it beats the mutex (55 against 81 ms with m = 11), but with 8 threads it is the slowest variant with m = 11 and very unstable with m = 1, although 8 threads fit on the 8 performance cores. The threads waiting in the loop compete for the same cache line as the holder. The expected advantage of the spin lock up to the number of cores is therefore *not* confirmed.
 - **Conclusion:** the decision in [0010](decisions/0010-shared-counter-and-lock.md) is confirmed. How often the threads synchronise matters far more than which lock they use: once per thread, every lock is fast; once per number, every lock (and the atomic) is slow.
+
+## Step 6: list mode
+
+List mode writes a line for every valid number, so the threads share the output and the sequence number. This step measures what that costs, for the program (one lock per line) and for the alternative with a writer thread and a bounded buffer. The reasons for the choice are in [decision 0012](decisions/0012-list-mode-output.md).
+
+### What is compared
+
+| Variant | Who writes | Synchronisation per valid number |
+|---|---|---|
+| `mutex` (**the program**) | the thread that finds the number | `std::mutex`: sequence number and line |
+| `spin_lock` | the thread that finds the number | `SpinLock`: sequence number and line |
+| `writer_thread` | one extra thread | push into a `BoundedBuffer` of 1024 numbers (mutex and condition variables); the writer numbers and writes |
+
+The lines go to a stream that discards them, so the measurement shows the cost of synchronisation and formatting, not of the terminal or the disk. Range `[0, 10⁶)`, p = 1, 2, 4, 8, and 16, m = 11 (about 91,000 lines) and m = 1 (a million lines).
+
+### Commands
+
+```bash
+cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
+cmake --build --preset release
+./build/release/iban_benchmark_variants --benchmark_filter=listVariant \
+    --benchmark_repetitions=5 --benchmark_report_aggregates_only=true \
+    --benchmark_out=docs/data/step6-list.json --benchmark_out_format=json
+```
+
+### Expected outcome
+
+- With m = 11 the threads spend most of their time on the m-check, so more threads still help, but less than in count mode.
+- With m = 1 every number is a line: the threads mostly wait for the output, so more threads help little or even slow the program down, as with a lock per number in step 5.
+- The writer thread moves the writing out of the lock, but hands every number over between threads; whether that pays off is the question of this measurement.
+
+### Results
+
+To be added after the measurement on the M1 Pro.
 
 ## Figures for the report
 

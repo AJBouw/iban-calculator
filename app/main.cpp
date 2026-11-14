@@ -1,7 +1,7 @@
 /// @file main.cpp
 /// @brief Entry point: asks for the input values, validates them and
-///        runs the requested mode. Count mode is implemented; list and search
-///        mode follow.
+///        runs the requested mode. Count and list mode are implemented;
+///        search mode follows.
 // LEARN: main() only wires the layers together: read text, call the parser,
 // LEARN: print the result. All logic lives in iban_core, where it is tested.
 
@@ -13,6 +13,7 @@
 #include "iban/Version.h"
 #include "iban/application/Mode.h"
 #include "iban/application/ParallelCount.h"
+#include "iban/application/ParallelList.h"
 #include "iban/application/Query.h"
 #include "iban/presentation/ConsoleInput.h"
 #include "iban/presentation/InputParser.h"
@@ -67,21 +68,32 @@ int main() {
     }
 
     const auto& query = *result.query;
-    if (query.mode == Mode::Count) {
-        // Count mode: the output is one number, as in the assignment example.
-        try {
-            std::cout << iban::application::countParallel(query) << "\n";
-        } catch (const std::exception& error) {
-            // For example std::system_error when a thread cannot be started.
-            // LEARN: Catching here gives a clear message and exit code 1 instead
-            // LEARN: of std::terminate with an unhandled exception.
-            std::cerr << kProgramName << ": error: " << error.what() << "\n";
-            return EXIT_FAILURE;
+    try {
+        switch (query.mode) {
+            case Mode::Count:
+                // Count mode: the output is one number, as in the assignment example.
+                std::cout << iban::application::countParallel(query) << "\n";
+                return EXIT_SUCCESS;
+            case Mode::List:
+                // List mode: one line "<sequence number> <number>" per valid
+                // number, written by the threads as soon as they find it.
+                // LEARN: No std::endl or flush per line: on a terminal the output
+                // LEARN: appears line by line anyway, and flushing every line would
+                // LEARN: make large lists much slower when the output is piped.
+                static_cast<void>(iban::application::listParallel(query, std::cout));
+                return EXIT_SUCCESS;
+            case Mode::Search:
+                break;  // follows; see the temporary output below
         }
-        return EXIT_SUCCESS;
+    } catch (const std::exception& error) {
+        // For example std::system_error when a thread cannot be started.
+        // LEARN: Catching here gives a clear message and exit code 1 instead
+        // LEARN: of std::terminate with an unhandled exception.
+        std::cerr << kProgramName << ": error: " << error.what() << "\n";
+        return EXIT_FAILURE;
     }
 
-    // Temporary output for the modes that are not implemented yet: confirms
+    // Temporary output for search mode, which is not implemented yet: confirms
     // that the input is valid.
     std::cout << "input OK: " << modeName(query.mode) << " mode, range [" << query.begin << ", "
               << query.end << "), m = " << query.modulus << ", p = " << query.threadCount;

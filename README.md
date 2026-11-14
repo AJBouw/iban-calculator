@@ -6,7 +6,7 @@ A multithreaded command-line application written in modern C++20. It generalises
 
 The application is designed to count, list, or search for numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
 
-> **Project status:** Count mode works with `p` threads and a shared counter, and is measured. List mode and search mode are under development.
+> **Project status:** Count mode and list mode work with `p` threads and are measured. Search mode is under development.
 
 ## Table of Contents
 
@@ -233,7 +233,8 @@ Examples from the assignment:
 - **Standard output** contains only results. The questions and error messages are written to **standard error**, so the results can be compared or redirected (`iban > out.txt`) without the prompt.
 - Invalid input is reported with the program name and the first invalid field, for example `iban: error: m must be between 1 and 256`, and the program exits with status code 1.
 - **Count mode** prints one number: how many values in `[b, e)` pass the m-check.
-- Until list and search mode are implemented, the program prints `input OK:` followed by the validated values for those modes.
+- **List mode** prints one line per valid number: the sequence number, a space, and the number, for example `1 274856182`. The numbers are written as soon as a thread finds them, so their order may differ per run; the sequence numbers always ascend from 1 in the order of the lines.
+- Until search mode is implemented, the program prints `input OK:` followed by the validated values for that mode.
 
 ## Project Structure
 
@@ -259,7 +260,8 @@ iban-calculator/
 │   └── main.cpp            # Entry point only
 ├── benchmark/
 │   ├── CountBenchmark.cpp          # Google Benchmark: count mode with 1, 2, 4, ... threads
-│   └── CountVariantsBenchmark.cpp  # Shared counter, locks, atomic and result slots compared
+│   ├── CountVariantsBenchmark.cpp  # Shared counter, locks, atomic, and result slots compared
+│   └── ListVariantsBenchmark.cpp   # List mode: one lock per line versus a writer thread
 ├── docs/
 │   ├── decisions/          # Architecture decision records: options, choices and reasons
 │   ├── data/               # Raw benchmark results (JSON)
@@ -270,17 +272,22 @@ iban-calculator/
 │       ├── application/
 │       │   ├── CountVariants.h # Ways to combine the counts of p threads, for measurement
 │       │   ├── Limits.h        # Input rules from the assignment (b, e, m, p)
+│       │   ├── ListVariants.h  # Ways to write the list from p threads, for measurement
 │       │   ├── ParallelCount.h # Count mode with p threads and a shared counter
+│       │   ├── ParallelList.h  # List mode with p threads and numbered lines
 │       │   ├── Mode.h          # Operating mode u
 │       │   └── Query.h         # A validated request
 │       ├── domain/
 │       │   ├── Count.h         # Sequential count of a range
+│       │   ├── ForEachValid.h  # Calls a function for every valid number in a range
 │       │   ├── MCheck.h        # Public interface of the m-check
 │       │   ├── Range.h         # Half-open range [begin, end)
 │       │   └── RangeSplit.h    # Fair split of a range into p parts
 │       ├── infrastructure/
 │       │   ├── BasicLockable.h # Concept for a lock type (lock and unlock)
+│       │   ├── BoundedBuffer.h # Producer-consumer queue: mutex and two condition variables
 │       │   ├── ForkJoin.h      # Starts one thread per part and joins them all
+│       │   ├── SequencedWriter.h # Numbered lines: sequence number and line under one lock
 │       │   ├── SharedCounter.h # Counter protected by a lock, the lock as a template parameter
 │       │   └── SpinLock.h      # Lock that waits actively, to compare with std::mutex
 │       └── presentation/
@@ -289,7 +296,9 @@ iban-calculator/
 ├── src/
 │   ├── application/
 │   │   ├── CountVariants.cpp
-│   │   └── ParallelCount.cpp
+│   │   ├── ListVariants.cpp
+│   │   ├── ParallelCount.cpp
+│   │   └── ParallelList.cpp
 │   ├── domain/
 │   │   ├── Count.cpp
 │   │   ├── MCheck.cpp          # Reference implementation of the m-check
@@ -308,6 +317,7 @@ iban-calculator/
 │   │           ├── features/             # Scenarios in Gherkin (*.feature)
 │   │           └── junit-platform.properties
 │   ├── race/
+│   │   ├── ListOrderDemo.cpp # Shows a race condition without a data race (list order)
 │   │   └── RaceDemo.cpp    # Shows the data race of a counter without a lock
 │   └── unit/
 │       ├── SetupTest.cpp
@@ -318,14 +328,18 @@ iban-calculator/
 │       ├── CountTest.cpp
 │       ├── ParallelCountTest.cpp
 │       ├── SharedCounterTest.cpp
-│       └── CountVariantsTest.cpp
+│       ├── CountVariantsTest.cpp
+│       ├── ForEachValidTest.cpp
+│       ├── BoundedBufferTest.cpp
+│       ├── SequencedWriterTest.cpp
+│       └── ListVariantsTest.cpp
 ├── tools/
 │   ├── plot_speedup.py     # Draws the speedup figure from benchmark JSON
 │   └── requirements.txt    # Pinned Python packages for tools/
 └── build/                  # Generated; not committed
 ```
 
-Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artifacts are kept outside the source directories.
+Public headers live under `include/iban/<layer>/` and implementation files under `src/<layer>/`, one folder per layer. Namespaces follow the folders (`iban::domain`, `iban::application`, `iban::presentation`). Generated files and build artefacts are kept outside the source directories.
 
 ## Architecture and Design
 
@@ -384,6 +398,20 @@ splitRange([b, e), p)  →  part 0   part 1   …   part p−1
 - **Exactly `p` threads**: a thread with an empty part finishes immediately.
 - **Starting and joining** is in one helper, `runInParallel` (`ForkJoin.h`), so every variant in `CountVariants.h` uses the same exception-safe thread handling.
 
+### Parallel list
+
+`listParallel` splits the range like the count and starts one thread per part. Every thread walks its part with `forEachValid` and writes each valid number at once through one shared `SequencedWriter`, which holds the output stream, a `std::mutex`, and the next sequence number.
+
+```text
+thread i finds x  →  text " x\n" (outside the lock)  →  lock: sequence number + 1, write "<n> x\n", unlock
+```
+
+- **Sequence number and line in one critical section.** If the number were taken first (even with an atomic) and the line written afterwards, another thread could write a higher number in between. `ListOrderDemo` shows this: hundreds of lines out of order per run, while ThreadSanitizer reports nothing, because every single access is synchronised. It is a race condition, not a data race.
+- **As little as possible under the lock**: the account number is formatted before the lock is taken.
+- **No flush per line**: on a terminal the lines appear one by one anyway; flushing every line would make large lists much slower when the output is piped.
+- **A writer thread with a bounded buffer** (producer-consumer, as in the lectures) is the alternative: the counting threads push numbers into a `BoundedBuffer`, and one extra thread numbers and writes them. It is implemented and measured (`listWithWriterThread`). The reasons for the choice are in [decision 0012](docs/decisions/0012-list-mode-output.md).
+- Writing is sequential by nature, so list mode cannot scale like count mode when many numbers are valid.
+
 ### Input handling
 
 Input passes through two layers before any calculation starts:
@@ -432,6 +460,10 @@ ctest --preset debug -L unit
 | `SharedCounterTest` | With `std::mutex` and with `SpinLock`: start value, additions, and no lost addition when 16 threads add at the same time; the concept accepts both locks and rejects a type without `lock()`/`unlock()`. |
 | `RunInParallel` | Every index runs exactly once. |
 | `CountVariants` | Every way of combining the counts (result slots, atomic, mutex and spin lock per number and per thread) equals the sequential count for many thread counts and moduli. |
+| `ForEachValid` | Visits the assignment examples in ascending order and exactly the numbers that `countValid` counts. |
+| `BoundedBuffer` | First in, first out; remaining items after `close()` and then none; `close()` wakes a waiting consumer; 8 producers and 4 consumers with a buffer of 1 deliver every item exactly once. |
+| `SequencedWriterTest` | With `std::mutex` and with `SpinLock`: numbered lines, and ascending sequence numbers when 16 threads write 32,000 lines at the same time. |
+| `ListVariants` | Every way of writing the list (lock, spin lock, writer thread with a buffer of 1024 and of 1) writes each valid number once, as `<n> <number>` with sequence numbers 1, 2, 3, …, for many thread counts and moduli. |
 | `RangeSplit` | The assignment example, the remainder distribution, more parts than values, and the three requirements (no gaps, no overlap, sizes differ by at most one) for thousands of combinations, including the largest range. |
 
 ### Planned test levels
@@ -456,11 +488,12 @@ ctest --preset debug -L e2e --output-on-failure
 
 CTest starts Maven with the path to the built program. The first run downloads Cucumber and JUnit. Use `-V` to see every step, and open `tests/e2e/target/cucumber-report.html` for the report.
 
-Current scenarios (33 in total):
+Current scenarios (41 in total):
 
 | Feature | Verifies |
 |---|---|
 | `count_mode.feature` | The assignment examples, a single number valid (1) or invalid (0), the three one-line forms and input per question, and the same result for `p` = 1, 2, 3, 8, 20 and 256 (an end-to-end check of the parallel count). |
+| `list_mode.feature` | Both list examples from the assignment, a range without valid numbers, and the same list for `p` = 1, 2, 3, 20 and 256; the numbers are compared as a set, and the sequence numbers must ascend from 1. |
 | `input_errors.feature` | No input, missing values, and one example per validation rule (b, e, m, p, u, s, invalid numbers): message on standard error, no output, exit code 1. |
 
 The assignment examples are tagged `@assignment`; run only those with `mvn -f tests/e2e/pom.xml test -Diban.executable=<path to iban> -Dcucumber.filter.tags=@assignment`.
@@ -476,6 +509,9 @@ Scenarios are written in `tests/e2e/src/test/resources/features/`. These steps a
 | `Then the output is "…"` | Standard output equals this single line |
 | `Then the output is:` (with a `"""` block) | Standard output equals these lines |
 | `Then the program counts 2 valid account numbers` | Count mode: standard output is this number (also `1 valid account number`) |
+| `Then the program lists these valid account numbers:` (with a one-column table) | List mode: every line is two numbers, and the account numbers equal the table, in any order |
+| `Then the sequence numbers ascend from 1` | List mode: the first numbers of the lines are 1, 2, 3, … in the order of the lines |
+| `Then the program lists no account numbers` | List mode: nothing on standard output |
 | `Then the output is empty` | Nothing on standard output |
 | `Then the program succeeds` | Exit code 0 |
 | `Then the program fails` | Exit code other than 0 |
@@ -508,6 +544,7 @@ The benchmark uses [Google Benchmark](https://github.com/google/benchmark) (v1.1
 A data race cannot be tested reliably with a normal test: a counter without a lock sometimes gives the right result by chance. Two tools show it instead:
 
 - **`iban_race_demo`** counts with a shared counter without a lock (`NoLock`) and prints how many increments were lost, next to the same count with `std::mutex` and `SpinLock`.
+- **`iban_list_order_demo`** writes numbered lines with the sequence number and the line in two separate steps, and counts the lines that are out of order. ThreadSanitizer reports nothing here: it is a race condition without a data race, which only the right critical section prevents.
 - **ThreadSanitizer** (`tsan` preset) reports every data race while the program runs, with the lines of the two accesses. It reports the race in the demo, and none in the unit tests or the program.
 
 ```bash
@@ -516,6 +553,7 @@ A data race cannot be tested reliably with a normal test: a counter without a lo
 cmake --preset tsan                           # Clang or GCC; not MSVC
 cmake --build --preset tsan
 ./build/tsan/iban_race_demo                   # "WARNING: ThreadSanitizer: data race"
+./build/tsan/iban_list_order_demo             # lines out of order, but no warning
 ctest --preset tsan                           # all unit tests, no race reported
 ```
 
@@ -562,7 +600,7 @@ The assignment does not prescribe a build system; a single command such as `g++ 
 | Build on macOS, Linux and Windows (Clang, GCC, MSVC) | One description generates the native build for each compiler; CI uses it on all three platforms. |
 | Portable thread support | `Threads::Threads` adds `-pthread` where a platform needs it, instead of a compiler-specific flag. |
 | Debug for development, Release for measurements | Presets (`debug`, `release`) give two separate builds; measurements are only valid in Release. |
-| Unit tests in the same build | GoogleTest is fetched at a pinned version, and every test is registered with CTest. |
+| Unit tests in the same build | GoogleTest is fetched at a pinned version and every test is registered with CTest. |
 | Optional benchmark | Google Benchmark is fetched only when `IBAN_BUILD_BENCHMARKS` is on. |
 | One library for program and tests | `iban_core` is compiled once and linked by both, so the tests check the shipped code. |
 | Formatting check | `format` and `format-check` targets use the pinned clang-format version. |
@@ -628,7 +666,7 @@ Each step adds one concern, measured against the previous step where relevant, s
 | 4 | Count mode: sequential baseline compared with `p` threads, benchmark | ✅ |
 | 4b | End-to-end tests of the assignment examples in Gherkin (Cucumber, Java) | ✅ |
 | 5 | Shared counter: data race, mutex, local counting, spin lock, ThreadSanitizer | ✅ |
-| 6 | List mode | ⬜ |
+| 6 | List mode: sequence number and line under one lock, bounded buffer with a writer thread | ✅ |
 | 7 | Search mode with atomic stop flag and early termination | ⬜ |
 | 8 | Performance comparison, including an incremental m-check walker | ⬜ |
 | 9 | Thread pool | ⬜ |
