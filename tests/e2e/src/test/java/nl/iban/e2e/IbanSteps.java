@@ -116,6 +116,22 @@ public class IbanSteps {
         assertEquals("", normalise(output).strip(), "standard output");
     }
 
+    /**
+     * Search mode prints the account number s when it lies in the range and
+     * passes the m-check.
+     */
+    @Then("the program finds account number {long}")
+    public void theProgramFinds(long expected) {
+        assertEquals(String.valueOf(expected), normalise(output).strip(),
+                "account number found, on standard output");
+    }
+
+    /** Search mode prints -1 when the account number is not found. */
+    @Then("the program finds no account number")
+    public void theProgramFindsNothing() {
+        assertEquals("-1", normalise(output).strip(), "standard output");
+    }
+
     /** The sequence numbers are 1, 2, 3, ... in the order of the lines. */
     @Then("the sequence numbers ascend from 1")
     public void theSequenceNumbersAscend() {

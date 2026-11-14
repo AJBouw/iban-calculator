@@ -24,11 +24,12 @@ those steps.
 | [0010](0010-shared-counter-and-lock.md) | Shared counter: local count, one locked add per thread, lock as a template parameter | Accepted |
 | [0011](0011-continuous-integration-and-updates.md) | Continuous integration and dependency updates | Accepted |
 | [0012](0012-list-mode-output.md) | List mode: sequence number and line under one lock | Accepted |
+| [0013](0013-meaning-of-s.md) | Search mode: s is the account number to find | Accepted |
+| [0014](0014-stopping-the-search.md) | Search mode: an atomic stop flag, checked before every number | Accepted |
 
-Decisions still to be recorded when they are taken: the meaning of `s` and how
-the other threads stop in search mode, the incremental m-check, the thread pool
-(fixed ranges versus a shared task queue), and the release (removing the LEARN
-lines).
+Decisions still to be recorded when they are taken: the algorithmic
+improvements (the incremental m-check and the others), the thread pool (fixed
+ranges versus a shared task queue), and the release (removing the LEARN lines).
 
 Template for a new record:
 

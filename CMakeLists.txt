@@ -59,6 +59,7 @@ add_library(iban_core STATIC
         src/application/ListVariants.cpp
         src/application/ParallelCount.cpp
         src/application/ParallelList.cpp
+        src/application/ParallelSearch.cpp
         src/domain/Count.cpp
         src/domain/MCheck.cpp
         src/domain/RangeSplit.cpp
@@ -178,6 +179,8 @@ if(IBAN_BUILD_TESTS)
             tests/unit/BoundedBufferTest.cpp
             tests/unit/SequencedWriterTest.cpp
             tests/unit/ListVariantsTest.cpp
+            tests/unit/FindValidTest.cpp
+            tests/unit/SearchVariantsTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
@@ -248,11 +251,11 @@ if(IBAN_BUILD_BENCHMARKS)
     iban_set_warnings(iban_benchmark)
 
     # Compares the ways of combining the thread counts (shared counter, locks,
-    # atomic, result slots) and of writing the list (lock, writer thread). A
-    # separate program, so the speedup measurement and its CI summary stay
-    # unchanged.
+    # atomic, result slots), of writing the list (lock, writer thread), and of
+    # stopping the search (stop flag intervals). A separate program, so the
+    # speedup measurement and its CI summary stay unchanged.
     add_executable(iban_benchmark_variants benchmark/CountVariantsBenchmark.cpp
-            benchmark/ListVariantsBenchmark.cpp)
+            benchmark/ListVariantsBenchmark.cpp benchmark/SearchVariantsBenchmark.cpp)
     target_link_libraries(iban_benchmark_variants PRIVATE iban_core benchmark::benchmark)
     iban_set_warnings(iban_benchmark_variants)
 endif()
