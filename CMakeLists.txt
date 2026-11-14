@@ -56,7 +56,9 @@ configure_file(cmake/Version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/iban/Ver
 # LEARN: STATIC: the code is copied into each program that links it (a .a file).
 add_library(iban_core STATIC
         src/application/CountVariants.cpp
+        src/application/ListVariants.cpp
         src/application/ParallelCount.cpp
+        src/application/ParallelList.cpp
         src/domain/Count.cpp
         src/domain/MCheck.cpp
         src/domain/RangeSplit.cpp
@@ -172,6 +174,10 @@ if(IBAN_BUILD_TESTS)
             tests/unit/ParallelCountTest.cpp
             tests/unit/SharedCounterTest.cpp
             tests/unit/CountVariantsTest.cpp
+            tests/unit/ForEachValidTest.cpp
+            tests/unit/BoundedBufferTest.cpp
+            tests/unit/SequencedWriterTest.cpp
+            tests/unit/ListVariantsTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
@@ -186,6 +192,12 @@ if(IBAN_BUILD_TESTS)
     add_executable(iban_race_demo tests/race/RaceDemo.cpp)
     target_link_libraries(iban_race_demo PRIVATE iban_core)
     iban_set_warnings(iban_race_demo)
+
+    # Demonstration of a race condition without a data race in list mode: the
+    # sequence number and the line in two separate critical sections.
+    add_executable(iban_list_order_demo tests/race/ListOrderDemo.cpp)
+    target_link_libraries(iban_list_order_demo PRIVATE iban_core)
+    iban_set_warnings(iban_list_order_demo)
 endif()
 
 # ---------------------------------------------------------------------------
