@@ -6,7 +6,7 @@ A multithreaded command-line application written in modern C++20. It generalises
 
 The application is designed to count, list, or search for numbers that satisfy the m-check. The implementation focuses on correctness, efficient algorithms, thread safety and measurable concurrency performance.
 
-> **Project status:** Count mode and list mode work with `p` threads and are measured. Search mode is under development.
+> **Project status:** All three modes (count, list, and search) work with `p` threads and are measured. The algorithmic improvements and the thread pool follow.
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ The application is designed to support three operating modes:
 |---|---:|---|
 | Count | `0` | Count all valid numbers in the range `[b, e)`. |
 | List | `1` | Output every valid number, together with an ascending sequence number. |
-| Search | `2` | Search for the number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The other threads stop as soon as possible (interpretation to be confirmed, see open question 2). |
+| Search | `2` | Search for the account number `s`: print it when it lies in the range and passes the m-check; otherwise, print `-1`. The thread that finds it stops the other threads. The meaning of `s` is our own interpretation ([decision 0013](docs/decisions/0013-meaning-of-s.md)). |
 
 ### Input parameters
 
@@ -234,7 +234,7 @@ Examples from the assignment:
 - Invalid input is reported with the program name and the first invalid field, for example `iban: error: m must be between 1 and 256`, and the program exits with status code 1.
 - **Count mode** prints one number: how many values in `[b, e)` pass the m-check.
 - **List mode** prints one line per valid number: the sequence number, a space, and the number, for example `1 274856182`. The numbers are written as soon as a thread finds them, so their order may differ per run; the sequence numbers always ascend from 1 in the order of the lines.
-- Until search mode is implemented, the program prints `input OK:` followed by the validated values for that mode.
+- **Search mode** prints one number: `s` when it lies in `[b, e)` and passes the m-check, otherwise `-1`. Not finding the number is an answer, not an error, so the exit code is 0.
 
 ## Project Structure
 
@@ -261,7 +261,8 @@ iban-calculator/
 ├── benchmark/
 │   ├── CountBenchmark.cpp          # Google Benchmark: count mode with 1, 2, 4, ... threads
 │   ├── CountVariantsBenchmark.cpp  # Shared counter, locks, atomic, and result slots compared
-│   └── ListVariantsBenchmark.cpp   # List mode: one lock per line versus a writer thread
+│   ├── ListVariantsBenchmark.cpp   # List mode: one lock per line versus a writer thread
+│   └── SearchVariantsBenchmark.cpp # Search mode: what the stop flag saves and costs
 ├── docs/
 │   ├── decisions/          # Architecture decision records: options, choices and reasons
 │   ├── data/               # Raw benchmark results (JSON)
@@ -275,10 +276,13 @@ iban-calculator/
 │       │   ├── ListVariants.h  # Ways to write the list from p threads, for measurement
 │       │   ├── ParallelCount.h # Count mode with p threads and a shared counter
 │       │   ├── ParallelList.h  # List mode with p threads and numbered lines
+│       │   ├── ParallelSearch.h # Search mode with p threads and a stop flag
+│       │   ├── SearchVariants.h # Search with the stop flag checked at an interval, for measurement
 │       │   ├── Mode.h          # Operating mode u
 │       │   └── Query.h         # A validated request
 │       ├── domain/
 │       │   ├── Count.h         # Sequential count of a range
+│       │   ├── FindValid.h     # First valid number that matches a condition; stops when asked
 │       │   ├── ForEachValid.h  # Calls a function for every valid number in a range
 │       │   ├── MCheck.h        # Public interface of the m-check
 │       │   ├── Range.h         # Half-open range [begin, end)
@@ -298,7 +302,8 @@ iban-calculator/
 │   │   ├── CountVariants.cpp
 │   │   ├── ListVariants.cpp
 │   │   ├── ParallelCount.cpp
-│   │   └── ParallelList.cpp
+│   │   ├── ParallelList.cpp
+│   │   └── ParallelSearch.cpp
 │   ├── domain/
 │   │   ├── Count.cpp
 │   │   ├── MCheck.cpp          # Reference implementation of the m-check
@@ -332,7 +337,9 @@ iban-calculator/
 │       ├── ForEachValidTest.cpp
 │       ├── BoundedBufferTest.cpp
 │       ├── SequencedWriterTest.cpp
-│       └── ListVariantsTest.cpp
+│       ├── ListVariantsTest.cpp
+│       ├── FindValidTest.cpp
+│       └── SearchVariantsTest.cpp
 ├── tools/
 │   ├── plot_speedup.py     # Draws the speedup figure from benchmark JSON
 │   └── requirements.txt    # Pinned Python packages for tools/
@@ -412,6 +419,22 @@ thread i finds x  →  text " x\n" (outside the lock)  →  lock: sequence numbe
 - **A writer thread with a bounded buffer** (producer-consumer, as in the lectures) is the alternative: the counting threads push numbers into a `BoundedBuffer`, and one extra thread numbers and writes them. It is implemented and measured (`listWithWriterThread`). The reasons for the choice are in [decision 0012](docs/decisions/0012-list-mode-output.md).
 - Writing is sequential by nature, so list mode cannot scale like count mode when many numbers are valid.
 
+### Parallel search
+
+`searchParallel` splits the range like the count and starts one thread per part. Every thread searches its part with `findValid`, which walks the valid numbers and returns the first one that is `s`. Before every number, the thread looks at a shared `std::atomic<bool>` stop flag.
+
+```text
+thread i finds s  →  answer = s (compare-exchange, the first answer wins)  →  stop = true
+other threads     →  see stop = true before their next number  →  return without a result
+after join        →  print the answer, or -1 when no thread found s
+```
+
+- **A thread cannot be stopped from outside** in C++, so every thread asks itself whether it should stop, before every number. It therefore searches at most one number further after `s` is found.
+- **The flag is lock-free and cheap to read**: as long as nobody writes it, every core keeps it in its own cache. `memory_order_relaxed` is enough, because the answer is only read after `join`, and `join` makes every write of a thread visible.
+- **One flag per search**, not a global, so a thread pool can run searches after each other without resetting anything.
+- **The search does not know what `s` means**: `findValid` gets the condition as a parameter. Another meaning of `s` only changes that condition.
+- The options and reasons are in [decision 0013](docs/decisions/0013-meaning-of-s.md) (the meaning of `s`) and [decision 0014](docs/decisions/0014-stopping-the-search.md) (the stop flag).
+
 ### Input handling
 
 Input passes through two layers before any calculation starts:
@@ -464,6 +487,8 @@ ctest --preset debug -L unit
 | `BoundedBuffer` | First in, first out; remaining items after `close()` and then none; `close()` wakes a waiting consumer; 8 producers and 4 consumers with a buffer of 1 deliver every item exactly once. |
 | `SequencedWriterTest` | With `std::mutex` and with `SpinLock`: numbered lines, and ascending sequence numbers when 16 threads write 32,000 lines at the same time. |
 | `ListVariants` | Every way of writing the list (lock, spin lock, writer thread with a buffer of 1024 and of 1) writes each valid number once, as `<n> <number>` with sequence numbers 1, 2, 3, …, for many thread counts and moduli. |
+| `FindValid` | Returns the first valid number that matches the condition, asks the condition only about valid numbers, asks whether to stop before every number, and stops at once when asked. |
+| `SearchVariants` | Every way of stopping (before every number, every 1024 numbers, never) gives `s` or `-1` exactly as the m-check says, for every `s` in and around a range and many thread counts, both ends of the range, and more threads than numbers; the variants with a stop flag stop the other threads in the largest range. |
 | `RangeSplit` | The assignment example, the remainder distribution, more parts than values, and the three requirements (no gaps, no overlap, sizes differ by at most one) for thousands of combinations, including the largest range. |
 
 ### Planned test levels
@@ -488,12 +513,13 @@ ctest --preset debug -L e2e --output-on-failure
 
 CTest starts Maven with the path to the built program. The first run downloads Cucumber and JUnit. Use `-V` to see every step, and open `tests/e2e/target/cucumber-report.html` for the report.
 
-Current scenarios (41 in total):
+Current scenarios (52 in total):
 
 | Feature | Verifies |
 |---|---|
 | `count_mode.feature` | The assignment examples, a single number valid (1) or invalid (0), the three one-line forms and input per question, and the same result for `p` = 1, 2, 3, 8, 20 and 256 (an end-to-end check of the parallel count). |
 | `list_mode.feature` | Both list examples from the assignment, a range without valid numbers, and the same list for `p` = 1, 2, 3, 20 and 256; the numbers are compared as a set, and the sequence numbers must ascend from 1. |
+| `search_mode.feature` | A valid `s` in the range is printed, also at both ends of the range; `-1` for an `s` that fails the m-check, lies below `b`, or equals `e`; and the same answer for `p` = 1, 2, 3, 20 and 256. |
 | `input_errors.feature` | No input, missing values, and one example per validation rule (b, e, m, p, u, s, invalid numbers): message on standard error, no output, exit code 1. |
 
 The assignment examples are tagged `@assignment`; run only those with `mvn -f tests/e2e/pom.xml test -Diban.executable=<path to iban> -Dcucumber.filter.tags=@assignment`.
@@ -512,6 +538,8 @@ Scenarios are written in `tests/e2e/src/test/resources/features/`. These steps a
 | `Then the program lists these valid account numbers:` (with a one-column table) | List mode: every line is two numbers, and the account numbers equal the table, in any order |
 | `Then the sequence numbers ascend from 1` | List mode: the first numbers of the lines are 1, 2, 3, … in the order of the lines |
 | `Then the program lists no account numbers` | List mode: nothing on standard output |
+| `Then the program finds account number 274856182` | Search mode: standard output is this number |
+| `Then the program finds no account number` | Search mode: standard output is `-1` |
 | `Then the output is empty` | Nothing on standard output |
 | `Then the program succeeds` | Exit code 0 |
 | `Then the program fails` | Exit code other than 0 |
@@ -667,7 +695,7 @@ Each step adds one concern, measured against the previous step where relevant, s
 | 4b | End-to-end tests of the assignment examples in Gherkin (Cucumber, Java) | ✅ |
 | 5 | Shared counter: data race, mutex, local counting, spin lock, ThreadSanitizer | ✅ |
 | 6 | List mode: sequence number and line under one lock, bounded buffer with a writer thread | ✅ |
-| 7 | Search mode with atomic stop flag and early termination | ⬜ |
+| 7 | Search mode with atomic stop flag and early termination | ✅ |
 | 8 | Performance comparison, including an incremental m-check walker | ⬜ |
 | 9 | Thread pool | ⬜ |
 | 10 | Quality checks (sanitizers, static analysis, Doxygen) and release 1.0.0 | ⬜ |
@@ -680,12 +708,7 @@ The following points still need to be clarified against the original assignment 
 
 1. **Input format (assumption):** The assignment examples contain seven values, while the written description specifies five required parameters and one optional parameter. Every example starts with an extra `0`. This is treated as an optional leading zero: the program accepts it, requires it to be exactly `0`, and does not use it. Any other first value in a 7-number line is rejected, so a mistyped line is reported instead of silently misread. To be confirmed with the lecturer.
 
-2. **Search parameter `s`:** The assignment text says the program must find "a valid account number", and print `-1` when "the account number" is not found. Three interpretations are possible:
-   - **A (current choice):** `s` is the number to search for; the threads search the range, and the thread that finds `s` stops the others. Weakness: the answer could also be computed directly, without searching.
-   - **B:** `s` is not used; the program searches for any valid number in the range.
-   - **C:** `s` is a starting point for the search.
-
-   In every interpretation one thread must stop the others promptly, which is the concurrency requirement this mode tests.
+2. **Search parameter `s` (interpretation):** The assignment only says that `s` is an optional number that is used in search mode; the description of search mode does not mention `s`. We chose to read `s` as the account number to find, because "het rekeningnummer" points to one specific number and the two conditions in the text (in the range, passes the m-check) are exactly the checks for `s`. Six other meanings were considered, from "not used" to a hash of the number; they are compared in [decision 0013](docs/decisions/0013-meaning-of-s.md), together with the weakness of this reading: the answer could also be computed directly. To be confirmed with the lecturer.
 
 3. **Zero as a valid number:** The weighted digit sum of zero is zero. Since zero is divisible by every positive modulus, `passesMCheck(0, m)` returns `true`. Whether zero should be counted as a valid account number will be checked against the assignment requirements.
 

@@ -294,6 +294,46 @@ The spread was at most 4.6% for every run, except `spin_lock` at p = 8: 16% with
 - **What would make the writer thread pay off.** Handing over numbers one at a time costs more than writing them. Collecting numbers per thread in small batches (for example, 256) and pushing a batch at once would divide the handover cost by the batch size. A batch is not "saving everything until the end", but it delays each line a little; this is an option for the performance step, not for the program now.
 - **Conclusion:** the decision in [0012](decisions/0012-list-mode-output.md) is confirmed. Variant A with `std::mutex` is correct, simple, and the fastest stable variant. List mode cannot scale like count mode, because the output is sequential by nature; the more valid numbers, the more the threads wait for each other.
 
+## Step 7: search mode
+
+In search mode the thread that finds `s` sets a shared stop flag, and the other threads look at it before every number. This step measures what stopping saves when `s` is found early, and what looking at the flag costs when it never stops anything. The reasons for the design are in [decision 0014](decisions/0014-stopping-the-search.md).
+
+### What is compared
+
+| Variant | The threads look at the stop flag |
+|---|---|
+| `never_stop` | never: every thread searches its whole part (the baseline) |
+| `every_number` (**the program**) | before every number |
+| `every_1024` | before every 1024th number |
+
+Each variant is measured for three positions of `s` in the range `[0, 10⁷)` with m = 11 and p = 1, 2, 4, 8, and 16:
+
+| Position | `s` | What it shows |
+|---|---|---|
+| `early` | the first valid number from 1000 on, early in the part of the first thread | the benefit of stopping: the other threads can stop almost at once |
+| `late` | the last valid number in the range, at the end of the part of the last thread | little to save: the other threads have nearly finished when it is found |
+| `absent` | `s = e`, never found | the cost of looking at the flag without it ever being set |
+
+### Commands
+
+```bash
+cmake --preset release -DIBAN_BUILD_BENCHMARKS=ON
+cmake --build --preset release
+./build/release/iban_benchmark_variants --benchmark_filter=searchVariant \
+    --benchmark_repetitions=5 --benchmark_report_aggregates_only=true \
+    --benchmark_out=docs/data/step7-search.json --benchmark_out_format=json
+```
+
+### Expected outcome
+
+- `early`: with the stop flag, the search ends almost at once for every p; without it, the time is that of searching the whole range, as in count mode. With p = 1 every variant is fast, because the single thread returns as soon as it finds `s`.
+- `late` and `absent`: all variants take about as long as count mode, because every thread searches (nearly) its whole part. The difference between `never_stop` and `every_number` is the cost of reading the flag, which should be small because the flag stays in every core's cache.
+- `every_1024` should be at most slightly faster than `every_number` when nothing is found, and slightly slower to stop when `s` is found early.
+
+### Results
+
+To be added after the measurement on the M1 Pro.
+
 ## Figures for the report
 
 The Mermaid charts above are rendered by GitHub, but Mermaid cannot draw markers, dashed lines or a real legend. For the report, `tools/plot_speedup.py` draws the conventional figure from the raw benchmark output: measured speedup with markers, the ideal speedup as a dashed line, the number of performance cores, and the efficiency below it.
