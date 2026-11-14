@@ -251,11 +251,11 @@ if(IBAN_BUILD_BENCHMARKS)
     iban_set_warnings(iban_benchmark)
 
     # Compares the ways of combining the thread counts (shared counter, locks,
-    # atomic, result slots) and of writing the list (lock, writer thread). A
-    # separate program, so the speedup measurement and its CI summary stay
-    # unchanged.
+    # atomic, result slots), of writing the list (lock, writer thread), and of
+    # stopping the search (stop flag intervals). A separate program, so the
+    # speedup measurement and its CI summary stay unchanged.
     add_executable(iban_benchmark_variants benchmark/CountVariantsBenchmark.cpp
-            benchmark/ListVariantsBenchmark.cpp)
+            benchmark/ListVariantsBenchmark.cpp benchmark/SearchVariantsBenchmark.cpp)
     target_link_libraries(iban_benchmark_variants PRIVATE iban_core benchmark::benchmark)
     iban_set_warnings(iban_benchmark_variants)
 endif()
