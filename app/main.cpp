@@ -1,7 +1,6 @@
 /// @file main.cpp
 /// @brief Entry point: asks for the input values, validates them and
-///        runs the requested mode. Count and list mode are implemented;
-///        search mode follows.
+///        runs the requested mode: count, list, or search.
 // LEARN: main() only wires the layers together: read text, call the parser,
 // LEARN: print the result. All logic lives in iban_core, where it is tested.
 
@@ -14,6 +13,7 @@
 #include "iban/application/Mode.h"
 #include "iban/application/ParallelCount.h"
 #include "iban/application/ParallelList.h"
+#include "iban/application/ParallelSearch.h"
 #include "iban/application/Query.h"
 #include "iban/presentation/ConsoleInput.h"
 #include "iban/presentation/InputParser.h"
@@ -25,25 +25,8 @@ using iban::application::Mode;
 // Prefix for error messages, so the source is clear in the output of a script.
 // LEARN: A fixed name instead of argv[0]: argv[0] can be a full path such as
 // LEARN: ./build/debug/iban, which makes the message long and platform
-// dependent.
+// LEARN: dependent.
 constexpr std::string_view kProgramName = "iban";
-
-// Readable name of a mode for the summary line.
-// LEARN: A switch over an enum class without a default: the compiler warns
-// LEARN: (-Wswitch) when a new mode is added but not handled here.
-std::string_view modeName(Mode mode) {
-    switch (mode) {
-        case Mode::Count:
-            return "count";
-        case Mode::List:
-            return "list";
-        case Mode::Search:
-            return "search";
-    }
-    // Only reached with an invalid enum value; the parser never creates one.
-    // LEARN: Some compilers still require a return after a complete switch.
-    return "unknown";
-}
 
 }  // namespace
 
@@ -83,7 +66,10 @@ int main() {
                 static_cast<void>(iban::application::listParallel(query, std::cout));
                 return EXIT_SUCCESS;
             case Mode::Search:
-                break;  // follows; see the temporary output below
+                // Search mode: s when it is found, otherwise -1. The other
+                // threads have stopped when searchParallel returns.
+                std::cout << iban::application::searchParallel(query) << "\n";
+                return EXIT_SUCCESS;
         }
     } catch (const std::exception& error) {
         // For example std::system_error when a thread cannot be started.
@@ -93,13 +79,7 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    // Temporary output for search mode, which is not implemented yet: confirms
-    // that the input is valid.
-    std::cout << "input OK: " << modeName(query.mode) << " mode, range [" << query.begin << ", "
-              << query.end << "), m = " << query.modulus << ", p = " << query.threadCount;
-    if (query.target) {
-        std::cout << ", s = " << *query.target;
-    }
-    std::cout << "\n";
-    return EXIT_SUCCESS;
+    // Every case of the switch returns; this is only reached with an invalid
+    // mode, which the parser never creates.
+    return EXIT_FAILURE;
 }

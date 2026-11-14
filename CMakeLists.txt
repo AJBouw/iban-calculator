@@ -59,6 +59,7 @@ add_library(iban_core STATIC
         src/application/ListVariants.cpp
         src/application/ParallelCount.cpp
         src/application/ParallelList.cpp
+        src/application/ParallelSearch.cpp
         src/domain/Count.cpp
         src/domain/MCheck.cpp
         src/domain/RangeSplit.cpp
@@ -178,6 +179,8 @@ if(IBAN_BUILD_TESTS)
             tests/unit/BoundedBufferTest.cpp
             tests/unit/SequencedWriterTest.cpp
             tests/unit/ListVariantsTest.cpp
+            tests/unit/FindValidTest.cpp
+            tests/unit/SearchVariantsTest.cpp
     )
     # Links the same iban_core as the program, so the tests check the shipped code.
     target_link_libraries(iban_unit_tests PRIVATE iban_core GTest::gtest_main Threads::Threads)
