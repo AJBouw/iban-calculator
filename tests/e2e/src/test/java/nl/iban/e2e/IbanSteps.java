@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -91,6 +93,39 @@ public class IbanSteps {
                 "number of valid account numbers on standard output");
     }
 
+    /**
+     * List mode writes one line "<sequence number> <number>" per valid number.
+     * The order of the numbers depends on the threads, so they are compared
+     * sorted; the sequence numbers are checked by the next step.
+     */
+    // LEARN: A one-column table in Gherkin arrives here as a List<Long>.
+    @Then("the program lists these valid account numbers:")
+    public void theProgramLists(List<Long> expected) {
+        List<Long> numbers = new ArrayList<>();
+        for (long[] line : listLines()) {
+            numbers.add(line[1]);
+        }
+        List<Long> sortedExpected = new ArrayList<>(expected);
+        sortedExpected.sort(null);
+        numbers.sort(null);
+        assertEquals(sortedExpected, numbers, "account numbers on standard output, sorted");
+    }
+
+    @Then("the program lists no account numbers")
+    public void theProgramListsNothing() {
+        assertEquals("", normalise(output).strip(), "standard output");
+    }
+
+    /** The sequence numbers are 1, 2, 3, ... in the order of the lines. */
+    @Then("the sequence numbers ascend from 1")
+    public void theSequenceNumbersAscend() {
+        long expected = 1;
+        for (long[] line : listLines()) {
+            assertEquals(expected, line[0], "sequence number of line " + expected);
+            ++expected;
+        }
+    }
+
     @Then("the output is:")
     public void theOutputIsBlock(String expected) {
         assertEquals(normalise(expected).strip(), normalise(output).strip(), "standard output");
@@ -133,6 +168,20 @@ public class IbanSteps {
                 throw new java.io.UncheckedIOException(exception);
             }
         });
+    }
+
+    /** Every line of standard output as {sequence number, account number}. */
+    private List<long[]> listLines() {
+        List<long[]> lines = new ArrayList<>();
+        for (String line : normalise(output).strip().split("\n")) {
+            if (line.isEmpty()) {
+                continue;
+            }
+            String[] fields = line.split(" ");
+            assertEquals(2, fields.length, "line '" + line + "' must be two numbers");
+            lines.add(new long[] {Long.parseLong(fields[0]), Long.parseLong(fields[1])});
+        }
+        return lines;
     }
 
     private static String normalise(String text) {
