@@ -225,7 +225,7 @@ endif()
 # Benchmark
 # ---------------------------------------------------------------------------
 # Measures the count mode with 1 to 12, 16 and 32 threads. A separate program,
-# not a test: it takes seconds and its output is a time, not pass or fail.
+# not a test: it takes seconds, and its output is a time, not pass or fail.
 if(IBAN_BUILD_BENCHMARKS)
     include(FetchContent)
     # Pinned version, fetched like GoogleTest. SYSTEM: its headers do not
@@ -248,9 +248,11 @@ if(IBAN_BUILD_BENCHMARKS)
     iban_set_warnings(iban_benchmark)
 
     # Compares the ways of combining the thread counts (shared counter, locks,
-    # atomic, result slots). A separate program, so the speedup measurement and
-    # its CI summary stay unchanged.
-    add_executable(iban_benchmark_variants benchmark/CountVariantsBenchmark.cpp)
+    # atomic, result slots) and of writing the list (lock, writer thread). A
+    # separate program, so the speedup measurement and its CI summary stay
+    # unchanged.
+    add_executable(iban_benchmark_variants benchmark/CountVariantsBenchmark.cpp
+            benchmark/ListVariantsBenchmark.cpp)
     target_link_libraries(iban_benchmark_variants PRIVATE iban_core benchmark::benchmark)
     iban_set_warnings(iban_benchmark_variants)
 endif()
