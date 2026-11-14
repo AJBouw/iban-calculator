@@ -56,5 +56,30 @@ briefly as possible.
   and the end-to-end scenarios check this for many thread counts.
 - With many valid numbers (small m) the threads wait for the output lock: list
   mode cannot scale like count mode, because writing is sequential by nature.
-  The benchmark shows the cost (`docs/measurements.md`, step 6).
+  More threads even make list mode slower (see *Evidence*).
+- D is kept in the code as a measured alternative, not as the program. Batching
+  the numbers before they are handed over is an option for the performance
+  step.
 - The bounded buffer is reused when the thread pool arrives (a queue of tasks).
+
+## Evidence
+
+Measured on the M1 Pro on 2026-11-14, range `[0, 10⁶)`, median of 5
+repetitions (`docs/measurements.md`, step 6; raw data in
+`docs/data/step6-list.json`):
+
+| Variant | m = 11, p = 1 | m = 11, p = 16 | m = 1, p = 1 | m = 1, p = 16 |
+|---|---:|---:|---:|---:|
+| **A, `std::mutex`** (the program) | **10.9 ms** | **20.2 ms** | **69.4 ms** | **135 ms** |
+| A, `SpinLock` | 10.1 ms | 17.9 ms | 61.3 ms | 92.0 ms |
+| D, writer thread | 16.5 ms | 148 ms | 150 ms | 1634 ms |
+
+- A with `std::mutex` is stable for every p (spread at most 4%). The spin lock
+  is faster at some thread counts, but very unstable at p = 8 (spread 16%), as
+  in [0010](0010-shared-counter-and-lock.md).
+- D is slower than A for every p and m, up to 12× with m = 1 and 16 threads:
+  every number costs two lock operations and a wake-up instead of one lock
+  operation.
+- `iban_list_order_demo` with 200,000 lines and 8 threads: B wrote 6,557 to
+  7,618 lines with a lower sequence number than the line before, per run; A
+  wrote none. ThreadSanitizer reported nothing for either.

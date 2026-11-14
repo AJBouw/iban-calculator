@@ -104,10 +104,10 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, M1 Pro (8 P + 2 E cores)"
-x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
-y-axis "speedup" 0 --> 10
-line [1.00, 2.04, 3.01, 4.05, 5.02, 6.02, 6.91, 7.77, 7.09, 7.24, 6.96, 6.79, 7.45, 7.34]
-line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
+    x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
+    y-axis "speedup" 0 --> 10
+    line [1.00, 2.04, 3.01, 4.05, 5.02, 6.02, 6.91, 7.77, 7.09, 7.24, 6.96, 6.79, 7.45, 7.34]
+    line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
@@ -142,10 +142,10 @@ config:
 ---
 xychart-beta
     title "Speedup, count mode, M1 Pro, other programs closed"
-x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
-y-axis "speedup" 0 --> 10
-line [1.00, 1.98, 2.90, 3.85, 4.82, 5.72, 6.67, 7.51, 7.03, 6.96, 6.82, 7.17, 7.15, 7.73]
-line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
+    x-axis "threads" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 32]
+    y-axis "speedup" 0 --> 10
+    line [1.00, 1.98, 2.90, 3.85, 4.82, 5.72, 6.67, 7.51, 7.03, 6.96, 6.82, 7.17, 7.15, 7.73]
+    line [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 10]
 ```
 
 **Legend:** blue line = measured speedup; orange line = ideal speedup.
@@ -263,9 +263,36 @@ cmake --build --preset release
 - With m = 1 every number is a line: the threads mostly wait for the output, so more threads help little or even slow the program down, as with a lock per number in step 5.
 - The writer thread moves the writing out of the lock, but hands every number over between threads; whether that pays off is the question of this measurement.
 
-### Results
+### Results (2026-11-14)
 
-To be added after the measurement on the M1 Pro.
+Measured on the M1 Pro (see *Machine*), median of 5 repetitions, times in milliseconds for the range `[0, 10⁶)`. The load average was about 6.5, higher than in step 5 (about 4), so the exact numbers at p = 8 and 16 are less reliable; the differences between the variants are far larger than that. The raw results are in [`data/step6-list.json`](data/step6-list.json).
+
+**m = 11** (about 91,000 lines):
+
+| Variant | p = 1 | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---:|---:|---:|---:|---:|
+| **`mutex`** (the program) | **10.9** | **18.9** | **24.3** | **21.9** | **20.2** |
+| `spin_lock` | 10.1 | 10.1 | 15.4 | 38.2 | 17.9 |
+| `writer_thread` | 16.5 | 23.0 | 50.6 | 86.4 | 148 |
+
+**m = 1** (a million lines):
+
+| Variant | p = 1 | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---:|---:|---:|---:|---:|
+| **`mutex`** (the program) | **69.4** | **126** | **167** | **141** | **135** |
+| `spin_lock` | 61.3 | 78.4 | 117 | 193 | 92.0 |
+| `writer_thread` | 150 | 284 | 495 | 924 | 1634 |
+
+The spread was at most 4.6% for every run, except `spin_lock` at p = 8: 16% with m = 11 and 9% with m = 1.
+
+### Observations
+
+- **In list mode, more threads make the program slower.** With m = 11 the program takes 10.9 ms with one thread and about 20 ms with 8 or 16. The m-checks for a million numbers take about 6 ms with one thread (step 5: 60 ms for ten million), so writing the 91,000 lines already costs about 5 ms, about 54 ns per line. The threads divide the m-checks, but they write one line at a time, and every line hands the lock and the stream to another core. This is Amdahl's law with a sequential part that even grows with p: the time saved on the m-checks is smaller than the time lost to contention.
+- **The more lines, the stronger the effect.** With m = 1 the program writes a million lines: 69 ms with one thread, 126 to 167 ms with more. One line costs about 63 ns without contention and about twice as much with it. This is the same pattern as `mutex_per_hit` in step 5, because the program now locks once per valid number, as the assignment requires.
+- **The spin lock is again fast and unpredictable.** It is the fastest variant for p ≤ 4 and at p = 16, but at p = 8 it is the slowest of the two locks and very unstable (cv 16%), exactly as in step 5. With one thread it saves about 8 ms on a million lines, about 8 ns per line.
+- **The writer thread is the slowest variant everywhere, and gets slower with every thread.** With m = 1 and 16 threads it takes 1.6 s, 12× the program. The writer thread makes the writing free of locks, but every number now passes through the buffer: the producer takes the buffer's mutex and signals a condition variable, and the writer takes the same mutex again. That is two lock operations and a wake-up per number instead of one lock operation, and all p producers and the writer compete for the same mutex. When the buffer is empty, the writer sleeps and has to be woken; on macOS, that is a call into the kernel.
+- **What would make the writer thread pay off.** Handing over numbers one at a time costs more than writing them. Collecting numbers per thread in small batches (for example, 256) and pushing a batch at once would divide the handover cost by the batch size. A batch is not "saving everything until the end", but it delays each line a little; this is an option for the performance step, not for the program now.
+- **Conclusion:** the decision in [0012](decisions/0012-list-mode-output.md) is confirmed. Variant A with `std::mutex` is correct, simple, and the fastest stable variant. List mode cannot scale like count mode, because the output is sequential by nature; the more valid numbers, the more the threads wait for each other.
 
 ## Figures for the report
 
